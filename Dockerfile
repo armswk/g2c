@@ -1,18 +1,21 @@
-# ใช้ Nginx แบบ Alpine เพราะไฟล์มีขนาดเล็กและทำงานเร็วมาก
+# ใช้ Nginx แบบ Alpine เพราะไฟล์มีขนาดเล็กและทำงานเร็ว
 FROM nginx:alpine
 
 # ลบไฟล์หน้าเว็บเริ่มต้นของ Nginx ทิ้ง
 RUN rm -rf /usr/share/nginx/html/*
 
-# นำไฟล์หน้าเว็บ (G2C POS) ของเราทั้งหมดไปใส่แทนที่
-COPY ./frontend /usr/share/nginx/html
+# ก๊อปปี้เฉพาะไฟล์และโฟลเดอร์ที่จำเป็นสำหรับหน้าเว็บ
+COPY css/ /usr/share/nginx/html/css/
+COPY icon/ /usr/share/nginx/html/icon/
+COPY js/ /usr/share/nginx/html/js/
+COPY index.html manifest.json migration.html sw.js /usr/share/nginx/html/
 
-# นำไฟล์ตั้งค่า Reverse Proxy ไปวางทับของเดิม
-# (เพื่อให้ Nginx รู้ว่าต้องโยน API ไปหา PocketBase)
-COPY ./nginx.conf /etc/nginx/conf.d/default.conf
+# ก๊อปปี้ไฟล์ default.conf ไปวางทับค่าเริ่มต้นของ Nginx
+# (ตัวนี้คือไฟล์ที่ทำ Reverse Proxy ไปหา PocketBase)
+COPY default.conf /etc/nginx/conf.d/default.conf
 
-# เปิดพอร์ต 80 ให้ภายนอกเข้ามาใช้งานได้
+# เปิดพอร์ต 80
 EXPOSE 80
 
-# สั่งให้ Nginx ทำงานแบบไม่หยุด (Foreground)
+# สั่งให้ Nginx ทำงานแบบ Foreground
 CMD ["nginx", "-g", "daemon off;"]
