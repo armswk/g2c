@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, maximum-scale=1.0, user-scalable=no">
+    <!-- 🔥 เปลี่ยนชื่อ Title และ PWA -->
+    <title>G2C POS</title>
+
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="G2C POS">
+    <meta name="theme-color" content="#F3F4F6">
+    <link rel="manifest" href="manifest.json">
+
+    <!-- 🔥 1. เพิ่มไอคอนสำหรับ Browser (Tab บนคอมพิวเตอร์) -->
+    <link rel="icon" type="image/png" href="icon/image.png">
+    
+    <!-- 🔥 2. เพิ่มไอคอนสำหรับมือถือ iOS (iPhone/iPad) -->
+    <link rel="apple-touch-icon" href="icon/image.png">
+
+    <!-- Fonts & Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <!-- นำเข้า Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- นำเข้า CSS หลัก -->
+    <link rel="stylesheet" href="css/style.css?v=4">
+</head>
+<body>
+
+  <!-- หน้าจอ LOGIN -->
+  <div id="login-screen" class="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gradient-to-br from-[#E8F5E9] via-gray-50 to-[#CFD8DC]" style="display: none;">
+    
+    <div class="absolute top-0 left-0 w-full h-full overflow-hidden pointer-events-none">
+        <div class="absolute -top-24 -left-24 w-96 h-96 bg-green-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40"></div>
+        <div class="absolute top-1/4 -right-24 w-96 h-96 bg-emerald-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40"></div>
+    </div>
+
+    <div class="bg-white/90 backdrop-blur-xl p-8 sm:p-10 rounded-[2rem] shadow-2xl w-full max-w-md text-center relative border border-white">
+        
+        <div class="flex justify-center items-center mb-3">
+            <div class="bg-gradient-to-tr from-[#1a5336] to-[#2D6A4F] p-4 rounded-2xl shadow-lg shadow-green-900/20">
+                <i class="ph-fill ph-leaf text-4xl text-white"></i>
+            </div>
+        </div>
+        <!-- 🔥 เปลี่ยนชื่อที่หน้า Login -->
+        <h1 class="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#113623] to-[#2D6A4F] mb-2 tracking-tight">G2C POS</h1>
+        <p class="text-gray-500 mb-8 font-medium text-sm">เข้าสู่ระบบเพื่อจัดการยอดขายและลูกค้า</p>
+
+        <div class="space-y-5 mb-8 text-left">
+            <div>
+                <label class="block text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">อีเมลผู้ใช้งาน</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <i class="ph ph-envelope-simple text-gray-400 text-lg"></i>
+                    </div>
+                    <input type="email" id="loginEmail" placeholder="admin@example.com" class="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-[#2D6A4F] focus:ring-4 focus:ring-[#2D6A4F]/10 transition-all duration-300 font-sans text-gray-700">
+                </div>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-gray-600 mb-2 uppercase tracking-wide">รหัสผ่าน</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <i class="ph ph-lock-key text-gray-400 text-lg"></i>
+                    </div>
+                    <input type="password" id="loginPassword" placeholder="••••••••••" class="w-full pl-11 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:bg-white focus:border-[#2D6A4F] focus:ring-4 focus:ring-[#2D6A4F]/10 transition-all duration-300 font-sans text-gray-700">
+                </div>
+            </div>
+            <button onclick="handleLoginEmail()" class="w-full bg-gradient-to-r from-[#1a5336] to-[#2D6A4F] hover:from-[#113623] hover:to-[#1a5336] text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-300 mt-4 shadow-lg shadow-green-900/20 hover:shadow-xl hover:-translate-y-0.5 flex items-center justify-center gap-2">
+                <span>เข้าสู่ระบบ</span>
+                <i class="ph-bold ph-arrow-right text-lg"></i>
+            </button>
+        </div>
+
+        <div class="flex items-center gap-4 my-6 text-gray-400">
+            <hr class="flex-1 border-gray-200">
+            <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">หรือเข้าใช้ด้วย</span>
+            <hr class="flex-1 border-gray-200">
+        </div>
+
+        <!-- Social Login Buttons -->
+        <div class="space-y-3">
+            <button onclick="handleLoginGoogle()" class="w-full flex items-center justify-center gap-3 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 font-bold py-3.5 px-4 rounded-xl transition-all shadow-sm">
+                <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="w-5 h-5" alt="Google">
+                <span>Google Account</span>
+            </button>
+        </div>
+    </div>
+  </div>
+
+  <!-- หน้าจอ APP หลัก -->
+  <div class="safe-area-wrapper" id="app-screen" style="display: none; height: 100%; width: 100%; flex-direction: row !important;">
+    
+      <div id="screenOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:80;" onclick="closeAllPanels()"></div>
+      
+      <!-- Component: Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <!-- 🔥 เปลี่ยนชื่อที่ Logo Sidebar -->
+        <div class="sidebar-logo">
+          <i class="ph-fill ph-leaf" style="color: var(--success);"></i> G2C POS
+        </div>
+        <div class="nav-menu">
+          <div class="nav-item active" onclick="switchView('pos')"><i class="ph ph-storefront"></i> หน้าขาย (POS)</div>
+          <div class="nav-item" onclick="switchView('prod')"><i class="ph ph-package"></i> จัดการสินค้า & เซ็ต</div>
+          <div class="nav-item" onclick="switchView('cus')"><i class="ph ph-users"></i> ทะเบียนลูกค้า</div>
+          <div class="nav-item" onclick="switchView('inst')"><i class="ph ph-wallet"></i> ระบบผ่อนชำระ</div>
+          <div class="nav-item" onclick="switchView('dash')"><i class="ph ph-chart-line-up"></i> รายงาน & ประวัติ</div>
+        </div>
+        
+        <div style="padding: 15px 20px; font-size: 0.8rem; color: rgba(255,255,255,0.5); border-top: 1px solid rgba(255,255,255,0.1);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            
+            <div style="display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 8px; margin-left: -8px; border-radius: 8px; transition: background 0.2s;" class="hover:bg-white/10" onclick="showProfileModal()" title="ตั้งค่าบัญชี">
+                <i class="ph-fill ph-user-circle" style="font-size: 1.8rem; color: var(--primary-lt);"></i>
+                <div style="max-width: 120px;">
+                  <div id="sidebar-user-name" style="color: #fff; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">กำลังโหลด...</div>
+                  <!-- 🔥 เปลี่ยนจาก Amway Business Owner ให้ดูเป็นกลางขึ้น -->
+                  <div id="sidebar-user-email" style="font-size: 0.65rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">Business Owner</div>
+                </div>
+            </div>
+
+            <button onclick="logout()" class="text-red-400 hover:text-red-300 bg-transparent border-none cursor-pointer p-1" title="ออกจากระบบ">
+                <i class="ph-bold ph-sign-out text-xl"></i>
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Component: Main Content -->
+      <main class="main-content">
+        
+        <header class="topbar">
+          <div style="font-weight: 700; color: var(--primary-dk); font-size: 1.1rem; display: flex; align-items: center; gap: 8px; flex: 1;">
+            <span id="header-title">หน้าขาย (POS)</span>
+          </div>
+          <button class="mobile-cart-btn" onclick="toggleCart()" style="position: relative;" id="topCartIcon">
+            <i class="ph ph-shopping-cart"></i>
+            <span class="cart-badge" id="mobileCartBadge" style="display:none">0</span>
+          </button>
+        </header>
+
+        <div id="editModeBanner" style="background: #FEF3C7; color: #92400E; padding: 10px 20px; display: none; justify-content: space-between; align-items: center; font-size: 0.95rem; font-weight: 600; border-bottom: 1px solid #FDE68A;">
+          <div><i class="ph-fill ph-warning-circle" style="font-size: 1.2rem; vertical-align: middle;"></i> <span id="editModeText">กำลังแก้ไขออเดอร์...</span></div>
+          <button onclick="cancelEdit()" style="background: #fff; border: 1px solid #FDE68A; padding: 5px 12px; border-radius: 6px; font-family: inherit; font-weight: 600; color: #92400E; cursor: pointer;">ยกเลิก</button>
+        </div>
+
+        <!-- View 1: POS -->
+        <div id="view-pos" class="view-container active">
+          <div class="pos-layout">
+            <div class="pos-products">
+              
+              <div style="display: flex; background: #E5E7EB; border-radius: 8px; padding: 4px; margin-bottom: 15px; width: fit-content;">
+                  <button id="btn-price-member" class="active" onclick="togglePriceMode('member')" style="padding: 6px 16px; border: none; border-radius: 6px; font-family: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: 0.2s; background: #fff; color: var(--primary-dk); box-shadow: 0 1px 2px rgba(0,0,0,0.1);">ราคาสมาชิก (ABO)</button>
+                  <button id="btn-price-retail" onclick="togglePriceMode('retail')" style="padding: 6px 16px; border: none; border-radius: 6px; font-family: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer; transition: 0.2s; background: transparent; color: var(--text-muted);">ราคาปลีก (ลูกค้า)</button>
+              </div>
+
+              <div class="filter-bar">
+                <div class="search-box">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input type="text" id="searchInput" placeholder="ค้นหาชื่อ หรือ แบรนด์..." onkeyup="filterProducts()">
+                </div>
+                <div class="cat-tabs" id="catTabs">
+                  <button class="cat-btn active" onclick="setBrand('All', this)">ทั้งหมด</button>
+                  <button class="cat-btn" onclick="setBrand('Set', this)"><i class="ph-fill ph-gift"></i> จัดเซ็ต</button>
+                  <button class="cat-btn" onclick="setBrand('Nutrilite', this)">Nutrilite</button>
+                  <button class="cat-btn" onclick="setBrand('Artistry', this)">Artistry</button>
+                  <button class="cat-btn" onclick="setBrand('Amway Home', this)">Amway Home</button>
+                  <button class="cat-btn" onclick="setBrand('Personal Care', this)">Personal Care</button>
+                </div>
+              </div>
+              <div class="product-grid-wrapper">
+                <div class="product-grid" id="productGrid"></div>
+              </div>
+            </div>
+
+            <!-- Cart Sidebar -->
+            <div class="pos-cart" id="posCart">
+              <div class="cart-header">
+                <div><i class="ph ph-shopping-cart" style="vertical-align: middle; font-size: 1.2rem;"></i> ตะกร้าสินค้า</div>
+                <div style="display: flex; align-items: center; gap: 10px;">
+                  <button onclick="clearCart()" style="background: transparent; border: none; color: var(--primary-dk); font-family: inherit; font-weight: 600; font-size: 0.9rem; cursor: pointer;"><i class="ph ph-trash"></i> ล้าง</button>
+                  <button class="mobile-close-cart" onclick="toggleCart()"><i class="ph ph-x"></i></button>
+                </div>
+              </div>
+              
+              <div class="cart-items" id="cartItems">
+                <div style="text-align:center; color: #cbd5e1; margin-top: 60px;">
+                  <i class="ph ph-shopping-bag" style="font-size: 4rem; margin-bottom: 10px;"></i>
+                  <div style="font-weight: 600; color: #94a3b8;">ยังไม่มีรายการ</div>
+                </div>
+              </div>
+
+              <div class="cart-footer" style="padding-top: 10px;">
+                <div style="margin-bottom: 10px; max-height: 250px; overflow-y: auto; padding-right: 5px;">
+                  <label style="font-size: 0.85rem; font-weight: 700; color: var(--text); display: block; margin-bottom: 6px;">1. ข้อมูลออเดอร์</label>
+                  <div style="display: flex; gap:8px;">
+                     <input type="date" id="orderDate" class="c-input" style="margin-bottom: 8px; width:40%;">
+                     <select id="customerSelect" class="c-input" style="margin-bottom: 8px; flex:1;">
+                       <option value="">-- เลือกลูกค้า --</option>
+                     </select>
+                  </div>
+                  <!-- 🔥 เปลี่ยน Placeholder -->
+                  <input type="text" id="orderRef" class="c-input" placeholder="เลขอ้างอิงสั่งซื้อ (ถ้ามี)" style="margin-bottom: 8px;">
+                  
+                  <label style="font-size: 0.85rem; font-weight: 700; color: var(--text); display: block; margin-bottom: 6px; margin-top:8px;">2. การชำระเงิน</label>
+                  <select id="paymentStatus" class="c-input" style="margin-bottom: 8px; font-weight: 600;" onchange="togglePaymentOptions()">
+                    <option value="ยังไม่จ่าย">ยังไม่จ่าย (ค้างชำระ)</option>
+                    <option value="จ่ายแล้ว">ชำระเต็มจำนวน</option>
+                    <option value="ผ่อน">ระบบผ่อนชำระ</option>
+                  </select>
+
+                  <select id="paymentMethodFull" class="c-input" style="display: none; margin-bottom: 8px;">
+                    <option value="เงินสด">เงินสด</option>
+                    <option value="โอนเงิน">โอนเงิน</option>
+                    <option value="บัตรเครดิต">บัตรเครดิต</option>
+                  </select>
+
+                  <div id="installmentOptions" style="display: none; background: #F8FAFC; padding: 10px; border-radius: 8px; border: 1px solid var(--border); margin-bottom: 8px;">
+                     <label style="font-size: 0.8rem; color: var(--text-muted); display:block; margin-bottom:4px;">รูปแบบการผ่อน</label>
+                     <select id="instType" class="c-input" style="margin-bottom: 8px;">
+                        <option value="เรา">ผ่อนกับเรา (Manual)</option>
+                        <option value="บัญชีลูกค้า">ผ่อนผ่านบัญชีลูกค้า (Auto)</option>
+                     </select>
+                     <label style="font-size: 0.8rem; color: var(--text-muted); display:block; margin-bottom:4px;">จำนวนงวด</label>
+                     <select id="instTerms" class="c-input" style="margin-bottom: 0;">
+                        <option value="3">3 งวด</option>
+                        <option value="6">6 งวด</option>
+                        <option value="12">12 งวด</option>
+                     </select>
+                  </div>
+                  <input type="text" id="orderRemark" class="c-input" placeholder="หมายเหตุเพิ่มเติม..." style="margin-bottom: 0; margin-top: 5px;">
+                </div>
+
+                <div class="summary-row pv">
+                  <span>คะแนนรวม</span>
+                  <span id="cartTotalPV">0.00 PV</span>
+                </div>
+                <div class="summary-row total">
+                  <span>ยอดสุทธิ</span>
+                  <span id="cartTotal">€0.00</span>
+                </div>
+
+                <button class="btn-checkout" id="checkoutBtn" onclick="submitOrder()" disabled>ยืนยันออเดอร์</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- View 2: Products -->
+        <div id="view-prod" class="view-container">
+          <div class="pos-layout">
+            <div class="pos-products">
+              <div style="display:flex; justify-content:space-between; margin-bottom: 15px; align-items:center; flex-wrap: wrap; gap: 15px;">
+                <h2 style="color:var(--primary-dk); font-size:1.5rem; font-weight: 700; margin: 0;"><i class="ph-fill ph-package"></i> จัดการสินค้า & เซ็ต</h2>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn-checkout" style="width:auto; margin:0; padding:10px 20px; border-radius:8px; font-size: 0.95rem; box-shadow: 0 2px 4px rgba(45,106,79,0.15);" onclick="showProductModal()">+ เพิ่มสินค้าเดี่ยว</button>
+                    <button class="btn-checkout" style="width:auto; margin:0; padding:10px 20px; border-radius:8px; font-size: 0.95rem; background: var(--accent); box-shadow: 0 2px 4px rgba(247,127,0,0.15);" onclick="showSetModal()">+ จัดเซ็ตสินค้า</button>
+                </div>
+              </div>
+              
+              <div class="filter-bar" style="padding-left: 0; padding-right: 0;">
+                <div class="search-box">
+                  <i class="ph ph-magnifying-glass"></i>
+                  <input type="text" id="searchProdInput" placeholder="ค้นหาชื่อ หรือ แบรนด์..." onkeyup="filterManageProducts()">
+                </div>
+                <div class="cat-tabs" id="prodCatTabs">
+                  <button class="cat-btn active" onclick="setProdBrand('All', this)">ทั้งหมด</button>
+                  <button class="cat-btn" onclick="setProdBrand('Set', this)"><i class="ph-fill ph-gift"></i> เซ็ตสินค้า</button>
+                  <button class="cat-btn" onclick="setProdBrand('Nutrilite', this)">Nutrilite</button>
+                  <button class="cat-btn" onclick="setProdBrand('Artistry', this)">Artistry</button>
+                  <button class="cat-btn" onclick="setProdBrand('Amway Home', this)">Amway Home</button>
+                  <button class="cat-btn" onclick="setProdBrand('Personal Care', this)">Personal Care</button>
+                </div>
+              </div>
+
+              <div class="product-grid-wrapper" style="padding-left: 0; padding-right: 0;">
+                <div class="product-grid" id="productManageGrid"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- View 3: Customers -->
+        <div id="view-cus" class="view-container">
+          <div class="dash-layout">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 25px; align-items:center; flex-wrap: wrap; gap: 15px;">
+              <h2 style="color:var(--primary-dk); font-size:1.5rem; font-weight: 700; margin: 0;"><i class="ph-fill ph-users"></i> ทะเบียนลูกค้า</h2>
+              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <button class="btn-checkout" style="width:auto; margin:0; padding:10px 15px; border-radius:8px; font-size: 0.9rem; background: var(--bg); color: var(--primary); border: 1px solid var(--primary);" onclick="copyCustomerLink()">
+                  <i class="ph ph-link"></i> คัดลอกลิงก์ให้ลูกค้ากรอก
+                </button>
+                <input type="month" id="cusMonth" class="c-input" style="width:auto; margin:0; font-weight: 600;" onchange="renderCustomers()">
+                <button class="btn-checkout" style="width:auto; margin:0; padding:10px 20px; border-radius:8px; font-size: 0.95rem;" onclick="showCustomerModal()">
+                  + เพิ่มลูกค้าใหม่
+                </button>
+              </div>
+            </div>
+            <div class="customer-grid" id="customerList"></div>
+          </div>
+        </div>
+
+        <!-- View 4: Installments -->
+        <div id="view-inst" class="view-container">
+          <div class="dash-layout">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 25px; align-items:center;">
+              <h2 style="color:var(--primary-dk); font-size:1.5rem; font-weight: 700; margin: 0;"><i class="ph-fill ph-wallet"></i> ระบบผ่อนชำระ</h2>
+              <select id="instFilter" class="c-input" style="width:auto; margin:0;" onchange="renderInstallments()">
+                 <option value="ALL">ดูสถานะทั้งหมด</option>
+                 <option value="ONGOING">กำลังผ่อน</option>
+                 <option value="DONE">ผ่อนครบแล้ว</option>
+              </select>
+            </div>
+
+            <div class="history-card">
+              <div style="padding: 15px 20px; background: #F8FAFC; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 1.1rem; color: var(--primary-dk);">
+                ตารางติดตามยอดผ่อน
+              </div>
+              <div id="installmentList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- View 5: Dashboard -->
+        <div id="view-dash" class="view-container">
+          <div class="dash-layout">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 25px; align-items:center;">
+              <h2 style="color:var(--primary-dk); font-size:1.5rem; font-weight: 700; margin: 0;"><i class="ph-fill ph-chart-line-up"></i> รายงานยอดขาย</h2>
+              <input type="month" id="dashMonth" class="c-input" style="width:auto; margin:0; font-weight: 600;" onchange="updateDashboard()">
+            </div>
+
+            <div class="kpi-grid">
+              <div class="kpi-card">
+                <div class="kpi-title">ยอดขายรวม (เดือนที่เลือก)</div>
+                <div class="kpi-val" id="dashSales">€0.00</div>
+              </div>
+              <div class="kpi-card pv">
+                <div class="kpi-title">PV รวม (เดือนที่เลือก)</div>
+                <div class="kpi-val" id="dashPV" style="color: var(--accent);">0.00</div>
+              </div>
+            </div>
+
+            <div class="history-card">
+              <div style="padding: 15px 20px; background: #F8FAFC; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
+                <span style="font-weight: 700; font-size: 1.1rem; color: var(--primary-dk); flex: 1;">ประวัติออเดอร์</span>
+                <select id="dashCustomerSelect" onchange="loadHistory()" class="c-input" style="width: auto; margin: 0; padding: 6px 10px;"><option value="ALL">ลูกค้าทั้งหมด</option></select>
+                <select id="dashPayStatus" onchange="loadHistory()" class="c-input" style="width: auto; margin: 0; padding: 6px 10px;">
+                  <option value="ALL">สถานะจ่ายเงินทั้งหมด</option>
+                  <option value="จ่ายแล้ว">จ่ายแล้ว</option>
+                  <option value="ยังไม่จ่าย">ยังไม่จ่าย</option>
+                  <option value="ผ่อน">ผ่อนชำระ</option>
+                </select>
+                <!-- 🔥 เปลี่ยนชื่อ Dropdown ตัวกรอง -->
+                <select id="dashOrderRef" onchange="loadHistory()" class="c-input" style="width: auto; margin: 0; padding: 6px 10px;">
+                  <option value="ALL">สถานะการสั่งซื้อ</option>
+                  <option value="HAS_REF">สั่งแล้ว (มี Order Ref)</option>
+                  <option value="NO_REF">ยังไม่สั่ง (ไม่มี Order Ref)</option>
+                </select>
+              </div>
+              <div id="historyList"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Mobile Bottom Nav -->
+        <nav class="mobile-bottom-nav">
+            <div class="bottom-nav-item active" onclick="switchView('pos')">
+              <i class="ph ph-storefront"></i>
+              <span>ขาย</span>
+            </div>
+            <div class="bottom-nav-item" onclick="switchView('prod')">
+              <i class="ph ph-package"></i>
+              <span>สินค้า</span>
+            </div>
+            <div class="bottom-nav-item" onclick="switchView('cus')">
+              <i class="ph ph-users"></i>
+              <span>ลูกค้า</span>
+            </div>
+            <div class="bottom-nav-item" onclick="switchView('inst')">
+              <i class="ph ph-wallet"></i>
+              <span>ผ่อนชำระ</span>
+            </div>
+            <div class="bottom-nav-item" onclick="switchView('dash')">
+              <i class="ph ph-chart-line-up"></i>
+              <span>รายงาน</span>
+            </div>
+            <div class="bottom-nav-item" onclick="showProfileModal()">
+              <i class="ph ph-user-circle"></i>
+              <span>บัญชี</span>
+            </div>
+        </nav>
+        
+      </main>
+
+  </div> 
+
+  <!-- Scripts -->
+  <script type="module" src="js/app.js"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(reg => {
+          console.log('Service Worker Registered!', reg);
+        }).catch(err => {
+          console.log('Service Worker registration failed: ', err);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
+
+

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Amway POS - Data Migration Tool</title>
+    <!-- นำเข้า Tailwind CSS และ PapaParse สำหรับอ่านไฟล์ CSV -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    
+    <!-- 🔥 อัปเดต PocketBase SDK เป็นเวอร์ชั่นล่าสุด (0.24+) เพื่อให้รองรับ _superusers -->
+    <script src="https://cdn.jsdelivr.net/npm/pocketbase@latest/dist/pocketbase.umd.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f3f4f6; }
+        .log-box { height: 300px; overflow-y: auto; background: #1e293b; color: #a7f3d0; font-family: monospace; padding: 15px; border-radius: 8px; font-size: 0.9rem; }
+        .log-success { color: #34d399; }
+        .log-error { color: #f87171; }
+        .log-warn { color: #fbbf24; }
+    </style>
+</head>
+<body class="p-8">
+
+    <div class="max-w-4xl mx-auto bg-white p-8 rounded-xl shadow-lg">
+        <div class="flex items-center gap-3 mb-6 border-b pb-4">
+            <h1 class="text-2xl font-bold text-gray-800">🚀 Data Migration Tool</h1>
+            <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">GAS to PocketBase</span>
+        </div>
+
+        <!-- 1. ตั้งค่าการเชื่อมต่อ -->
+        <div class="bg-gray-50 p-5 rounded-lg border border-gray-200 mb-6">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4">1. การเชื่อมต่อ PocketBase</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">PocketBase URL</label>
+                    <input type="text" id="pbUrl" value="https://api.local.armswk.me" class="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-green-400">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Admin Email</label>
+                    <input type="email" id="adminEmail" placeholder="admin@example.com" class="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-green-400">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">Admin Password</label>
+                    <input type="password" id="adminPassword" placeholder="••••••••••" class="w-full p-2 border rounded outline-none focus:ring-2 focus:ring-green-400">
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. อัปโหลดไฟล์ CSV -->
+        <div class="bg-gray-50 p-5 rounded-lg border border-gray-200 mb-6">
+            <h2 class="text-lg font-semibold text-gray-700 mb-4">2. อัปโหลดไฟล์ CSV ทั้ง 4 ไฟล์</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">1. สินค้า (Products.csv)</label>
+                    <input type="file" id="fileProducts" accept=".csv" class="w-full p-2 border rounded bg-white cursor-pointer">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">2. เซ็ตสินค้า (ProductSets.csv)</label>
+                    <input type="file" id="fileSets" accept=".csv" class="w-full p-2 border rounded bg-white cursor-pointer">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">3. ลูกค้า (Customers.csv)</label>
+                    <input type="file" id="fileCustomers" accept=".csv" class="w-full p-2 border rounded bg-white cursor-pointer">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-600 mb-1">4. ออเดอร์ (Orders.csv)</label>
+                    <input type="file" id="fileOrders" accept=".csv" class="w-full p-2 border rounded bg-white cursor-pointer">
+                </div>
+            </div>
+        </div>
+
+        <button id="btnStart" onclick="startMigration()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors mb-6 shadow-md">
+            ▶️ เริ่มการย้ายข้อมูล (Start Migration)
+        </button>
+
+        <!-- 3. Logs -->
+        <div>
+            <h2 class="text-lg font-semibold text-gray-700 mb-2">Logs การทำงาน:</h2>
+            <div id="logArea" class="log-box"></div>
+        </div>
+    </div>
+
+    <script>
+        let pb;
+        const logArea = document.getElementById('logArea');
+
+        function log(msg, type = 'normal') {
+            const div = document.createElement('div');
+            div.className = type === 'success' ? 'log-success' : type === 'error' ? 'log-error' : type === 'warn' ? 'log-warn' : '';
+            div.innerText = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            logArea.appendChild(div);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        // ฟังก์ชันอ่านไฟล์ CSV
+        function parseCSV(file) {
+            return new Promise((resolve, reject) => {
+                if (!file) return resolve([]);
+                Papa.parse(file, {
+                    header: true,
+                    skipEmptyLines: true,
+                    complete: (results) => resolve(results.data),
+                    error: (error) => reject(error)
+                });
+            });
+        }
+
+        async function startMigration() {
+            const url = document.getElementById('pbUrl').value;
+            const email = document.getElementById('adminEmail').value;
+            const password = document.getElementById('adminPassword').value;
+
+            if (!email || !password) {
+                alert("กรุณาใส่ Admin Email และ Password เพื่อให้สิทธิ์ในการเขียนข้อมูล");
+                return;
+            }
+
+            const btn = document.getElementById('btnStart');
+            btn.disabled = true;
+            btn.innerText = "กำลังประมวลผล... ห้ามปิดหน้าต่างนี้";
+            btn.classList.replace('bg-green-600', 'bg-gray-500');
+
+            logArea.innerHTML = '';
+            log("เริ่มต้นกระบวนการ Migration...");
+
+            try {
+                // 1. Authenticate with PocketBase
+                pb = new PocketBase(url);
+                log("กำลัง Login เข้าระบบ Admin...");
+                
+                await pb.collection('_superusers').authWithPassword(email, password);
+                
+                log("Login สำเร็จ!", "success");
+
+                // 2. Read Files
+                const fProd = document.getElementById('fileProducts').files[0];
+                const fSets = document.getElementById('fileSets').files[0];
+                const fCus = document.getElementById('fileCustomers').files[0];
+                const fOrd = document.getElementById('fileOrders').files[0];
+
+                const [products, sets, customers, rawOrders] = await Promise.all([
+                    parseCSV(fProd), parseCSV(fSets), parseCSV(fCus), parseCSV(fOrd)
+                ]);
+
+                // ==========================================
+                // 3. Migrate Products
+                // ==========================================
+                if (products.length > 0) {
+                    log(`พบสินค้า ${products.length} รายการ. เริ่ม Upload...`);
+                    for (const p of products) {
+                        try {
+                            await pb.collection('products').create({
+                                name: p.ProductName,
+                                price: Number(p.Price) || 0,
+                                pv: Number(p.PV) || 0,
+                                brand: p.Brand
+                            });
+                        } catch (e) { log(`[Prod] ข้าม ${p.ProductName}: อาจจะมีอยู่แล้ว หรือข้อมูลผิดพลาด`, "error"); }
+                    }
+                    log("✅ Migrate สินค้าเสร็จสิ้น", "success");
+                }
+
+                // ==========================================
+                // 4. Migrate Product Sets
+                // ==========================================
+                if (sets.length > 0) {
+                    log(`พบเซ็ตสินค้า ${sets.length} รายการ. เริ่ม Upload...`);
+                    for (const s of sets) {
+                        try {
+                            await pb.collection('product_sets').create({
+                                name: s.SetName,
+                                price: Number(s.SetPrice) || 0,
+                                pv: Number(s.SetPV) || 0,
+                                items: s.ItemsList || ""
+                            });
+                        } catch (e) { log(`[Set] ข้าม ${s.SetName}`, "error"); }
+                    }
+                    log("✅ Migrate เซ็ตสินค้าเสร็จสิ้น", "success");
+                }
+
+                // ==========================================
+                // 5. Migrate Customers
+                // ==========================================
+                if (customers.length > 0) {
+                    log(`พบลูกค้า ${customers.length} รายการ. เริ่ม Upload...`);
+                    for (const c of customers) {
+                        try {
+                            let channelJson = [];
+                            try {
+                                if (c.ContactChannel && c.ContactChannel !== "[]") {
+                                    let cleanStr = c.ContactChannel.replace(/""/g, '"');
+                                    if(cleanStr.startsWith('"') && cleanStr.endsWith('"')) cleanStr = cleanStr.slice(1, -1);
+                                    channelJson = JSON.parse(cleanStr);
+                                }
+                            } catch (err) {}
+
+                            let dobStr = "";
+                            if (c.DOB) {
+                                const d = new Date(c.DOB);
+                                if (!isNaN(d.getTime())) dobStr = d.toISOString();
+                            }
+
+                            let status = "Member";
+                            if (c.Remark && c.Remark.includes("ABO")) status = "ABO";
+                            if (c.Remark && c.Remark.includes("รอสมัคร")) status = "Pending";
+
+                            if(c.Name === "Pre-Order") continue;
+
+                            await pb.collection('customers').create({
+                                name: c.Name,
+                                channel: channelJson,
+                                phone: c.ContactInfo || "",
+                                dob: dobStr,
+                                address: c.Address || "",
+                                remark: c.Remark || "",
+                                mapUrl: c.MapLink || "",
+                                status: status
+                            });
+                        } catch (e) { log(`[Cus] ข้ามลูกค้า ${c.Name}: ${e.message}`, "error"); }
+                    }
+                    log("✅ Migrate ลูกค้าเสร็จสิ้น", "success");
+                }
+
+                // ==========================================
+                // 6. Migrate Orders (Grouping Logic)
+                // ==========================================
+                if (rawOrders.length > 0) {
+                    log(`พบรายการออเดอร์ดิบ ${rawOrders.length} บรรทัด. กำลังจัดกลุ่ม (Grouping)...`);
+                    
+                    const orderMap = {};
+                    rawOrders.forEach(row => {
+                        if (!row.OrderID) return;
+
+                        if (!orderMap[row.OrderID]) {
+                            let dateIso = new Date().toISOString();
+                            if (row.Date) {
+                                const d = new Date(row.Date);
+                                if (!isNaN(d.getTime())) dateIso = d.toISOString();
+                            }
+
+                            let hist = [];
+                            try { if (row.InstallmentHistory && row.InstallmentHistory !== "[]") hist = JSON.parse(row.InstallmentHistory.replace(/""/g, '"')); } catch(e){}
+
+                            orderMap[row.OrderID] = {
+                                orderNumber: row.OrderID, // 🔥 นำรหัส OR-... จากไฟล์มาบันทึกลงในฟิลด์ใหม่ที่เราสร้างขึ้น
+                                customerName: row.CustomerName,
+                                orderDate: dateIso,
+                                remark: row.Remark || "", // ไม่ต้องยัดใส่หมายเหตุแล้ว
+                                items: [],
+                                totalPrice: 0,
+                                totalPV: 0,
+                                paymentStatus: row.PaymentStatus || "ยังไม่จ่าย",
+                                paymentMethod: row.PaymentMethod || "",
+                                orderRef: row.OrderRef || "",
+                                instType: row.InstallmentType || "",
+                                instTerms: Number(row.InstallmentTerms) || 0,
+                                instPaid: Number(row.InstallmentPaid) || 0,
+                                instHistory: hist
+                            };
+                        }
+
+                        orderMap[row.OrderID].items.push({
+                            name: row.ProductName,
+                            qty: Number(row.Qty) || 1,
+                            price: Number(row.UnitPrice) || 0,
+                            pv: Number(row.UnitPV) || 0
+                        });
+
+                        orderMap[row.OrderID].totalPrice += Number(row.TotalPrice) || 0;
+                        orderMap[row.OrderID].totalPV += Number(row.TotalPV) || 0;
+                    });
+
+                    const groupedOrders = Object.values(orderMap);
+                    log(`จัดกลุ่มเสร็จสิ้น ได้ออเดอร์สุทธิ ${groupedOrders.length} บิล. เริ่ม Upload...`);
+
+                    for (const o of groupedOrders) {
+                        try {
+                            o.totalPrice = Number(o.totalPrice.toFixed(2));
+                            o.totalPV = Number(o.totalPV.toFixed(2));
+
+                            await pb.collection('orders').create(o);
+                        } catch (e) { log(`[Order] ข้ามออเดอร์ของ ${o.customerName}: ${e.message}`, "error"); }
+                    }
+                    log("✅ Migrate ออเดอร์เสร็จสิ้น", "success");
+                }
+
+                log("🎉 กระบวนการ Migration ทั้งหมดเสร็จสมบูรณ์!", "success");
+
+            } catch (err) {
+                log(`เกิดข้อผิดพลาดร้ายแรง: ${err.message}`, "error");
+                alert("Error: " + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = "▶️ เริ่มการย้ายข้อมูล (Start Migration)";
+                btn.classList.replace('bg-gray-500', 'bg-green-600');
+            }
+        }
+    </script>
+</body>
+</html>
