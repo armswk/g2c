@@ -156,6 +156,7 @@ export function updateCart() {
   document.getElementById('cartTotal').innerText = `€${netTotal.toFixed(2)}`;
   document.getElementById('cartTotalPV').innerText = `${totalPv.toFixed(2)} PV`;
   document.getElementById('checkoutBtn').disabled = false;
-  
+  if (typeof window.updateInstallmentCalc === 'function') window.updateInstallmentCalc();
+
   if(badge) { const sumQty = state.cart.reduce((s, i) => s + i.qty, 0); badge.innerText = sumQty; badge.style.display = sumQty > 0 ? 'block' : 'none'; }
 }

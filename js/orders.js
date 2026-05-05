@@ -4,6 +4,28 @@ import { clearCart, updateCart } from './pos.js';
 import { closeAllPanels, togglePaymentOptions } from './ui.js';
 import { renderCustomers } from './customers.js';
 
+function getPaidMonths(o) {
+  let hist = o.instHistory || [];
+  if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
+  if (!Array.isArray(hist)) hist = [];
+  return hist.filter(h => h.method && h.method !== 'รอดำเนินการ').length;
+}
+
+export function updateInstallmentCalc() {
+  const instOptions = document.getElementById('installmentOptions');
+  if (!instOptions || instOptions.style.display === 'none') return;
+
+  const totalStr = (document.getElementById('cartTotal')?.innerText || '0').replace('€', '');
+  const totalPrice = parseFloat(totalStr) || 0;
+  const terms = Math.max(1, parseInt(document.getElementById('instTerms')?.value || 0) || 1);
+  const monthly = totalPrice / terms;
+
+  const hasInput = document.getElementById('instTerms')?.value;
+  const calcDisplay = document.getElementById('instCalcDisplay');
+  if (calcDisplay) calcDisplay.style.display = hasInput ? 'block' : 'none';
+  if (document.getElementById('instMonthlyDisplay')) document.getElementById('instMonthlyDisplay').innerText = `€${monthly.toFixed(2)} / เดือน`;
+}
+
 export async function submitOrder() {
   const customerName = document.getElementById('customerSelect').value;
   if(!customerName) return Swal.fire({icon:'warning', title:'กรุณาเลือกลูกค้า'});
@@ -39,6 +61,10 @@ export async function submitOrder() {
   const discountInput = document.getElementById('discountInput');
   const discount = Math.max(0, Number(discountInput ? discountInput.value : 0) || 0);
   const subtotal = Number(explodedCart.reduce((s, i) => s + (i.price * i.qty), 0).toFixed(2));
+  const netTotalPrice = Number(Math.max(0, subtotal - discount).toFixed(2));
+
+  const instTermsVal = paymentStatus === 'ผ่อน' ? Math.max(1, Number(document.getElementById('instTerms').value) || 1) : 0;
+  const instMonthly = instTermsVal > 0 ? Number((netTotalPrice / instTermsVal).toFixed(2)) : 0;
 
   const payload = {
     orderNumber: state.currentEditId ? undefined : 'OR-' + Date.now(),
@@ -47,14 +73,15 @@ export async function submitOrder() {
     remark: document.getElementById('orderRemark').value,
     items: explodedCart,
     discount: discount,
-    totalPrice: Number(Math.max(0, subtotal - discount).toFixed(2)),
+    totalPrice: netTotalPrice,
     totalPV: Number(explodedCart.reduce((s, i) => s + (i.pv * i.qty), 0).toFixed(2)),
-    paymentStatus, 
-    paymentMethod, 
+    paymentStatus,
+    paymentMethod,
     orderRef: document.getElementById('orderRef').value,
     instType: paymentStatus === 'ผ่อน' ? document.getElementById('instType').value : '',
-    instTerms: paymentStatus === 'ผ่อน' ? Number(document.getElementById('instTerms').value) : 0,
-    instPaid: paymentStatus === 'จ่ายแล้ว' ? (Number(document.getElementById('instTerms').value) || 0) : 0,
+    instTerms: instTermsVal,
+    instMonthly: instMonthly,
+    instPaid: 0,
     instHistory: paymentStatus === 'ผ่อน' && document.getElementById('instType').value === 'เรา' ? [{term: 1, date: new Date(orderDate).toISOString(), method: 'รอดำเนินการ'}] : [],
     owner: pb.authStore.model ? pb.authStore.model.id : null
   };
@@ -88,6 +115,8 @@ export function resetForm() {
   if(document.getElementById('orderRef')) document.getElementById('orderRef').value = ''; 
   if(document.getElementById('paymentStatus')) document.getElementById('paymentStatus').value = 'ยังไม่จ่าย';
   if(document.getElementById('discountInput')) document.getElementById('discountInput').value = '';
+  if(document.getElementById('instTerms')) document.getElementById('instTerms').value = '';
+  const calcDisplay = document.getElementById('instCalcDisplay'); if(calcDisplay) calcDisplay.style.display = 'none';
 
   togglePaymentOptions();
   closeAllPanels();
@@ -151,8 +180,11 @@ export function loadHistory() {
     let quickPayBtn = '';
     if (g.paymentStatus === 'ยังไม่จ่าย') {
         quickPayBtn = `<span style="font-size:0.85rem; color:var(--accent); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="markAsPaid('${g.id}')"><i class="ph ph-hand-coins"></i> รับชำระเงิน</span>`;
-    } else if (g.paymentStatus === 'ผ่อน' && g.instPaid < g.instTerms && g.instType !== 'บัญชีลูกค้า') {
-        quickPayBtn = `<span style="font-size:0.85rem; color:var(--accent); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="payInstallment('${g.id}', ${g.instPaid + 1})"><i class="ph ph-hand-coins"></i> รับชำระงวดที่ ${g.instPaid + 1}</span>`;
+    } else if (g.paymentStatus === 'ผ่อน' && g.instType !== 'บัญชีลูกค้า') {
+        const gPaidMonths = getPaidMonths(g);
+        if (gPaidMonths < g.instTerms) {
+            quickPayBtn = `<span style="font-size:0.85rem; color:var(--accent); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="payInstallment('${g.id}', ${gPaidMonths + 1})"><i class="ph ph-hand-coins"></i> รับชำระงวดที่ ${gPaidMonths + 1}</span>`;
+        }
     }
 
     return `
@@ -169,6 +201,7 @@ export function loadHistory() {
           </div>
         </div>
         <div style="background:#F8FAFC; padding:12px 15px; border-radius:8px; margin-bottom:12px; border: 1px solid #E2E8F0;">${itemsHtml}</div>
+        ${g.remark ? `<div style="font-size:0.85rem; color:#92400E; background:#FFFBEB; padding:8px 12px; border-radius:6px; margin-bottom:12px; border: 1px solid #FDE68A;"><i class="ph-fill ph-note" style="color:#D97706;"></i> <span style="font-weight:600;">หมายเหตุ:</span> ${g.remark}</div>` : ''}
         <div style="display:flex; gap:15px; justify-content: flex-end; flex-wrap: wrap;">
           ${quickPayBtn}
           <span style="font-size:0.85rem; color:var(--success); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="printReceipt('${g.id}')"><i class="ph ph-printer"></i> พิมพ์</span>
@@ -284,12 +317,14 @@ export function editOrder(id) {
       }
       if(document.getElementById('orderRef')) document.getElementById('orderRef').value = order.orderRef || '';
       if(document.getElementById('discountInput')) document.getElementById('discountInput').value = order.discount || '';
+      if(document.getElementById('instTerms')) document.getElementById('instTerms').value = order.instTerms || '';
 
       document.getElementById('editModeBanner').style.display = 'flex';
       document.getElementById('editModeText').innerText = `กำลังแก้ไขรหัส: ${id}`;
       
-      updateCart(); 
-      window.switchView('pos'); 
+      updateCart();
+      updateInstallmentCalc();
+      window.switchView('pos');
       if(window.innerWidth <= 900) window.toggleCart();
     }
   });
@@ -313,8 +348,8 @@ export function renderInstallments() {
   
   let displayArr = state.allOrders.filter(o => {
      if(o.paymentStatus !== 'ผ่อน') return false;
-     if(filter === 'ONGOING') return o.instPaid < o.instTerms;
-     if(filter === 'DONE') return o.instPaid >= o.instTerms;
+     if(filter === 'ONGOING') return getPaidMonths(o) < o.instTerms;
+     if(filter === 'DONE') return getPaidMonths(o) >= o.instTerms;
      return true;
   });
 
@@ -323,37 +358,44 @@ export function renderInstallments() {
   list.innerHTML = displayArr.map(o => {
      let isAuto = o.instType === 'บัญชีลูกค้า';
      let typeBadge = isAuto ? `<span style="background:#E0F2FE; color:#0284C7; padding:2px 8px; border-radius:4px; font-size:0.75rem;">บัญชีลูกค้า (Auto)</span>` : `<span style="background:#FEF3C7; color:#D97706; padding:2px 8px; border-radius:4px; font-size:0.75rem;">ผ่อนกับเรา (Manual)</span>`;
-     let progress = Math.min((o.instPaid / o.instTerms) * 100, 100);
-     let statusText = o.instPaid >= o.instTerms ? '<span style="color:var(--success); font-weight:700;"><i class="ph-bold ph-check"></i> ผ่อนครบแล้ว</span>' : `<span style="color:var(--accent); font-weight:700;">จ่ายแล้ว ${o.instPaid}/${o.instTerms} งวด</span>`;
-     
+     const paidMonths = getPaidMonths(o);
+     const totalPrice = Number(o.totalPrice) || 0;
+     const paidAmount = Number(o.instPaid) || 0;
+     const remainingBalance = Math.max(0, totalPrice - paidAmount);
+     const remainingTerms = Math.max(1, o.instTerms - paidMonths);
+     const nextMonthly = remainingBalance > 0 ? (remainingBalance / remainingTerms) : 0;
+
+     let progress = totalPrice > 0 ? Math.min((paidAmount / totalPrice) * 100, 100) : 0;
+     let statusText = paidAmount >= totalPrice ? '<span style="color:var(--success); font-weight:700;"><i class="ph-bold ph-check"></i> ผ่อนครบแล้ว</span>' : `<span style="color:var(--accent); font-weight:700;">จ่ายไปแล้ว €${paidAmount.toFixed(2)} / €${totalPrice.toFixed(2)}</span>`;
+
      let actionBtn = '';
-     if (!isAuto && o.instPaid < o.instTerms) {
-        actionBtn = `<button onclick="payInstallment('${o.id}', ${o.instPaid + 1})" style="background:var(--primary); color:#fff; border:none; padding:8px 15px; border-radius:6px; font-family:inherit; cursor:pointer; font-weight:600; font-size:0.85rem;"><i class="ph-bold ph-check-circle"></i> จ่ายงวดที่ ${o.instPaid + 1}</button>`;
+     if (!isAuto && paidAmount < totalPrice) {
+        actionBtn = `<button onclick="payInstallment('${o.id}', ${paidMonths + 1})" style="background:var(--primary); color:#fff; border:none; padding:8px 15px; border-radius:6px; font-family:inherit; cursor:pointer; font-weight:600; font-size:0.85rem;"><i class="ph-bold ph-check-circle"></i> บันทึกชำระงวดที่ ${paidMonths + 1}</button>`;
      }
 
      let historyArr = [];
      try { historyArr = JSON.parse(o.instHistory || "[]"); } catch(e){}
      if (!Array.isArray(historyArr)) historyArr = [];
-     
+
      let historyHtml = historyArr.map(h => {
          let dObj = new Date(h.date); let safeDateObj = isNaN(dObj.getTime()) ? new Date() : dObj;
-         return `<div style="font-size:0.8rem; color:#666; margin-top:4px;">งวด ${h.term}: ${safeDateObj.toLocaleDateString('th-TH')} (${h.method})</div>`;
+         const amountStr = h.amount != null ? ` — <strong>€${Number(h.amount).toFixed(2)}</strong>` : '';
+         return `<div style="font-size:0.8rem; color:#666; margin-top:4px;">งวด ${h.term}: ${safeDateObj.toLocaleDateString('th-TH')} (${h.method})${amountStr}</div>`;
      }).join('');
 
      const displayId = o.orderNumber || o.id;
-     const termAmount = o.instTerms > 0 ? (Number(o.totalPrice) / o.instTerms).toFixed(2) : '0.00';
 
      return `
       <div style="padding: 20px; border-bottom: 1px solid var(--border);">
         <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
            <div>
               <div style="font-weight:700; color:var(--primary-dk); font-size:1.1rem; margin-bottom:5px;">👤 ${o.customer} ${typeBadge}</div>
-              <div style="font-size:0.85rem; color:var(--text-muted);"><i class="ph-fill ph-receipt"></i> บิล: ${displayId} | ยอด: €${(Number(o.totalPrice)||0).toFixed(2)} <span style="color:var(--primary-lt); font-weight:600;">(งวดละ €${termAmount})</span></div>
+              <div style="font-size:0.85rem; color:var(--text-muted);"><i class="ph-fill ph-receipt"></i> บิล: ${displayId} | ยอดรวม: €${totalPrice.toFixed(2)} | ${o.instTerms} เดือน <span style="color:var(--primary-lt); font-weight:600;">(งวดถัดไป €${nextMonthly.toFixed(2)})</span></div>
            </div>
            <div style="text-align:right;">${statusText}</div>
         </div>
         <div style="background:#E2E8F0; height:8px; border-radius:4px; margin-bottom:15px; overflow:hidden;">
-           <div style="background:var(--success); height:100%; width:${progress}%; transition:width 0.5s;"></div>
+           <div style="background:var(--success); height:100%; width:${progress.toFixed(1)}%; transition:width 0.5s;"></div>
         </div>
         <div style="display:flex; justify-content:space-between; align-items:flex-end;">
            <div>${historyHtml}</div><div>${actionBtn}</div>
@@ -363,26 +405,48 @@ export function renderInstallments() {
 }
 
 export function payInstallment(orderId, nextTerm) {
+   const o = state.allOrders.find(x => x.id === orderId);
+   if (!o) return;
+
+   const totalPrice = Number(o.totalPrice) || 0;
+   const paidAmount = Number(o.instPaid) || 0;
+   const remainingBalance = Math.max(0, totalPrice - paidAmount);
+   const remainingTerms = Math.max(1, o.instTerms - getPaidMonths(o));
+   const defaultAmount = Number((remainingBalance / remainingTerms).toFixed(2));
+
    Swal.fire({
       title: `บันทึกชำระงวดที่ ${nextTerm}`,
-      html: `<select id="swal-inst-method" class="c-input"><option value="เงินสด">เงินสด</option><option value="โอนเงิน">โอนเงิน</option></select>`,
-      showCancelButton: true, confirmButtonText: 'บันทึกชำระ', confirmButtonColor: '#2D6A4F'
+      html: `
+        <div style="text-align:left; margin-bottom:10px; font-size:0.85rem; color:#4B5563; background:#F8FAFC; padding:8px 12px; border-radius:6px; border:1px solid #E2E8F0;">
+          ยอดคงเหลือ: <strong style="color:var(--primary);">€${remainingBalance.toFixed(2)}</strong> &nbsp;|&nbsp; งวดที่เหลือ: <strong>${remainingTerms} งวด</strong>
+        </div>
+        <div style="margin-bottom:8px; text-align:left;">
+          <label style="font-size:0.85rem; font-weight:600; color:#374151; display:block; margin-bottom:4px;">ยอดเงินที่รับชำระ (€)</label>
+          <input type="number" id="swal-inst-amount" class="c-input" value="${defaultAmount}" min="0.01" step="0.01" style="text-align:right; font-size:1rem; font-weight:700; color:var(--primary-dk);">
+        </div>
+        <select id="swal-inst-method" class="c-input" style="margin-top:4px;"><option value="เงินสด">เงินสด</option><option value="โอนเงิน">โอนเงิน</option><option value="บัตรเครดิต">บัตรเครดิต</option></select>
+      `,
+      showCancelButton: true,
+      confirmButtonText: 'บันทึกชำระ',
+      cancelButtonText: 'ยกเลิก',
+      confirmButtonColor: '#2D6A4F'
    }).then(async res => {
       if(res.isConfirmed) {
-         let method = document.getElementById('swal-inst-method').value;
-         let o = state.allOrders.find(x => x.id === orderId);
-         if(!o) return;
+         const method = document.getElementById('swal-inst-method').value;
+         const amount = Math.max(0.01, parseFloat(document.getElementById('swal-inst-amount').value) || defaultAmount);
 
          let hist = o.instHistory || [];
          if(typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
-         hist.push({term: nextTerm, date: new Date().toISOString(), method: method});
-         
-         let payload = { instPaid: nextTerm, instHistory: hist };
-         if (nextTerm >= o.instTerms) payload.paymentStatus = 'จ่ายแล้ว';
+         if (!Array.isArray(hist)) hist = [];
+         hist.push({ term: nextTerm, date: new Date().toISOString(), method, amount });
+
+         const newInstPaid = Number((paidAmount + amount).toFixed(2));
+         let payload = { instHistory: hist, instPaid: newInstPaid };
+         if (newInstPaid >= totalPrice) payload.paymentStatus = 'จ่ายแล้ว';
 
          try {
             await pb.collection('orders').update(orderId, payload);
-            Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'บันทึกชำระแล้ว' });
+            Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: `บันทึกชำระ €${amount.toFixed(2)} สำเร็จ` });
          } catch(e) { Swal.fire('Error', e.message, 'error'); }
       }
    });

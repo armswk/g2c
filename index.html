@@ -225,12 +225,14 @@
                         <option value="เรา">ผ่อนกับเรา (Manual)</option>
                         <option value="บัญชีลูกค้า">ผ่อนผ่านบัญชีลูกค้า (Auto)</option>
                      </select>
-                     <label style="font-size: 0.8rem; color: var(--text-muted); display:block; margin-bottom:4px;">จำนวนงวด</label>
-                     <select id="instTerms" class="c-input" style="margin-bottom: 0;">
-                        <option value="3">3 งวด</option>
-                        <option value="6">6 งวด</option>
-                        <option value="12">12 งวด</option>
-                     </select>
+                     <label style="font-size: 0.8rem; color: var(--text-muted); display:block; margin-bottom:4px;">จำนวนเดือน</label>
+                     <input type="number" id="instTerms" class="c-input" placeholder="เช่น 6" min="1" step="1" oninput="updateInstallmentCalc()" style="margin-bottom: 8px; text-align: center;">
+                     <div id="instCalcDisplay" style="display: none; background: #EEF2FF; border: 1px solid #C7D2FE; border-radius: 6px; padding: 8px 10px; font-size: 0.82rem;">
+                       <div style="display: flex; justify-content: space-between;">
+                         <span style="color: #4B5563;">ยอดผ่อนต่อเดือน (โดยประมาณ)</span>
+                         <span id="instMonthlyDisplay" style="font-weight: 700; color: #2D6A4F;">€0.00 / เดือน</span>
+                       </div>
+                     </div>
                   </div>
                   <input type="text" id="orderRemark" class="c-input" placeholder="หมายเหตุเพิ่มเติม..." style="margin-bottom: 0; margin-top: 5px;">
                 </div>
