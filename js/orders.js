@@ -375,37 +375,32 @@ export function renderInstallments() {
      let progress = totalPrice > 0 ? Math.min((paidAmount / totalPrice) * 100, 100) : 0;
      let statusText = paidAmount >= totalPrice ? '<span style="color:var(--success); font-weight:700;"><i class="ph-bold ph-check"></i> ผ่อนครบแล้ว</span>' : `<span style="color:var(--accent); font-weight:700;">จ่ายไปแล้ว €${paidAmount.toFixed(2)} / €${totalPrice.toFixed(2)}</span>`;
 
-     let actionBtn = '';
+     let payBtn = '';
      if (!isAuto && paidAmount < totalPrice) {
-        actionBtn = `<button onclick="payInstallment('${o.id}', ${paidMonths + 1})" style="background:var(--primary); color:#fff; border:none; padding:8px 15px; border-radius:6px; font-family:inherit; cursor:pointer; font-weight:600; font-size:0.85rem;"><i class="ph-bold ph-check-circle"></i> บันทึกชำระงวดที่ ${paidMonths + 1}</button>`;
+        payBtn = `<button onclick="payInstallment('${o.id}', ${paidMonths + 1})" class="w-full sm:w-auto" style="background:var(--primary); color:#fff; border:none; padding:8px 15px; border-radius:6px; font-family:inherit; cursor:pointer; font-weight:600; font-size:0.85rem;"><i class="ph-bold ph-check-circle"></i> บันทึกชำระงวดที่ ${paidMonths + 1}</button>`;
      }
 
-     let historyArr = [];
-     try { historyArr = JSON.parse(o.instHistory || "[]"); } catch(e){}
-     if (!Array.isArray(historyArr)) historyArr = [];
-
-     let historyHtml = historyArr.map(h => {
-         let dObj = new Date(h.date); let safeDateObj = isNaN(dObj.getTime()) ? new Date() : dObj;
-         const amountStr = h.amount != null ? ` — <strong>€${Number(h.amount).toFixed(2)}</strong>` : '';
-         return `<div style="font-size:0.8rem; color:#666; margin-top:4px;">งวด ${h.term}: ${safeDateObj.toLocaleDateString('th-TH')} (${h.method})${amountStr}</div>`;
-     }).join('');
+     const histBtn = `<button onclick="showInstallmentHistory('${o.id}')" class="w-full sm:w-auto" style="background:#F1F5F9; color:#374151; border:1px solid #CBD5E1; padding:8px 15px; border-radius:6px; font-family:inherit; cursor:pointer; font-weight:600; font-size:0.85rem;"><i class="ph ph-clock-counter-clockwise"></i> ประวัติการชำระเงิน</button>`;
 
      const displayId = o.orderNumber || o.id;
+     const editTermsBtn = `<button onclick="editInstallmentTerms('${o.id}')" style="background:none; cursor:pointer; color:var(--primary-lt); font-size:0.78rem; padding:2px 8px; border:1px solid var(--border); border-radius:4px; font-family:inherit; white-space:nowrap;"><i class="ph ph-pencil-simple"></i> แก้ไขเดือน</button>`;
 
      return `
       <div style="padding: 20px; border-bottom: 1px solid var(--border);">
         <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-           <div>
+           <div style="flex:1; min-width:0;">
               <div style="font-weight:700; color:var(--primary-dk); font-size:1.1rem; margin-bottom:5px;">👤 ${o.customer} ${typeBadge}</div>
-              <div style="font-size:0.85rem; color:var(--text-muted);"><i class="ph-fill ph-receipt"></i> บิล: ${displayId} | ยอดรวม: €${totalPrice.toFixed(2)} | ${o.instTerms} เดือน <span style="color:var(--primary-lt); font-weight:600;">(งวดถัดไป €${nextMonthly.toFixed(2)})</span></div>
+              <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px;"><i class="ph-fill ph-receipt"></i> บิล: ${displayId} | ยอดรวม: €${totalPrice.toFixed(2)} | ${o.instTerms} เดือน</div>
+              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">${editTermsBtn}<span style="color:var(--primary-lt); font-weight:600; font-size:0.85rem;">(งวดถัดไป €${nextMonthly.toFixed(2)})</span></div>
            </div>
-           <div style="text-align:right;">${statusText}</div>
+           <div style="text-align:right; margin-left:12px;">${statusText}</div>
         </div>
         <div style="background:#E2E8F0; height:8px; border-radius:4px; margin-bottom:15px; overflow:hidden;">
            <div style="background:var(--success); height:100%; width:${progress.toFixed(1)}%; transition:width 0.5s;"></div>
         </div>
-        <div style="display:flex; justify-content:space-between; align-items:flex-end;">
-           <div>${historyHtml}</div><div>${actionBtn}</div>
+        <div class="flex flex-col sm:flex-row justify-end gap-2">
+           ${histBtn}
+           ${payBtn}
         </div>
       </div>`;
   }).join('');
@@ -457,6 +452,160 @@ export function payInstallment(orderId, nextTerm) {
          } catch(e) { Swal.fire('Error', e.message, 'error'); }
       }
    });
+}
+
+export function editInstallmentAmount(orderId, histIndex) {
+  const o = state.allOrders.find(x => x.id === orderId);
+  if (!o) return;
+
+  let hist = o.instHistory || [];
+  if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
+  if (!Array.isArray(hist)) hist = [];
+
+  const entry = hist[histIndex];
+  if (!entry) return;
+  const currentAmount = Number(entry.amount) || 0;
+
+  Swal.fire({
+    title: `แก้ไขยอดงวดที่ ${entry.term}`,
+    html: `
+      <div style="text-align:left; margin-bottom:8px; font-size:0.85rem; color:#4B5563; background:#F8FAFC; padding:8px 12px; border-radius:6px; border:1px solid #E2E8F0;">
+        ยอดเดิม: <strong style="color:var(--primary);">€${currentAmount.toFixed(2)}</strong>
+      </div>
+      <label style="display:block; text-align:left; font-size:0.85rem; font-weight:600; color:#374151; margin-bottom:4px;">ยอดเงินใหม่ (€)</label>
+      <input type="number" id="swal-edit-amount" class="c-input" value="${currentAmount}" min="0" step="0.01" style="text-align:right; font-size:1rem; font-weight:700; color:var(--primary-dk);">
+    `,
+    showCancelButton: true,
+    confirmButtonText: 'บันทึก',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#2D6A4F'
+  }).then(async res => {
+    if (!res.isConfirmed) return;
+    const newAmount = Math.max(0, parseFloat(document.getElementById('swal-edit-amount').value) || 0);
+    hist[histIndex] = { ...entry, amount: newAmount };
+
+    const newInstPaid = Number(hist
+      .filter(h => h.method && h.method !== 'รอดำเนินการ')
+      .reduce((sum, h) => sum + (Number(h.amount) || 0), 0).toFixed(2));
+    const totalPrice = Number(o.totalPrice) || 0;
+    const paidMonthsNew = hist.filter(h => h.method && h.method !== 'รอดำเนินการ').length;
+    const remainingTermsNew = Math.max(1, (Number(o.instTerms) || 1) - paidMonthsNew);
+    const remainingBalanceNew = Math.max(0, totalPrice - newInstPaid);
+    const newMonthly = Number((remainingBalanceNew > 0 ? remainingBalanceNew / remainingTermsNew : 0).toFixed(2));
+    let payload = { instHistory: hist, instPaid: newInstPaid, instMonthly: newMonthly };
+    if (newInstPaid >= totalPrice) payload.paymentStatus = 'จ่ายแล้ว';
+    else if (o.paymentStatus === 'จ่ายแล้ว') payload.paymentStatus = 'ผ่อน';
+
+    try {
+      await pb.collection('orders').update(orderId, payload);
+      Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'แก้ไขยอดสำเร็จ' });
+    } catch(e) { Swal.fire('Error', e.message, 'error'); }
+  });
+}
+
+export function showInstallmentHistory(orderId) {
+  const o = state.allOrders.find(x => x.id === orderId);
+  if (!o) return;
+
+  let hist = o.instHistory || [];
+  if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
+  if (!Array.isArray(hist)) hist = [];
+
+  if (hist.length === 0) {
+    Swal.fire({ title: 'ประวัติการชำระเงิน', text: 'ยังไม่มีประวัติการชำระ', icon: 'info' });
+    return;
+  }
+
+  const rows = hist.map((h, idx) => {
+    let dObj = new Date(h.date); let safeDateObj = isNaN(dObj.getTime()) ? new Date() : dObj;
+    const dateStr = safeDateObj.toLocaleDateString('th-TH');
+    const isPending = h.method === 'รอดำเนินการ';
+    const amountStr = (!isPending && h.amount != null) ? `€${Number(h.amount).toFixed(2)}` : '—';
+    const editBtn = !isPending
+      ? `<button onclick="editInstallmentAmount('${o.id}', ${idx})" style="background:none; border:1px solid #CBD5E1; border-radius:4px; padding:2px 8px; font-size:0.78rem; color:#475569; cursor:pointer; font-family:inherit;"><i class="ph ph-pencil-simple"></i></button>`
+      : '';
+    return `<tr style="border-top:1px solid #E2E8F0; ${isPending ? 'opacity:0.55;' : ''}">
+      <td style="padding:8px 10px; font-weight:600; color:#1E3A5F; white-space:nowrap;">งวดที่ ${h.term}</td>
+      <td style="padding:8px 10px; color:#374151; white-space:nowrap;">${dateStr}</td>
+      <td style="padding:8px 10px; color:#374151;">${h.method}</td>
+      <td style="padding:8px 10px; text-align:right; font-weight:700; color:${isPending ? '#9CA3AF' : '#2D6A4F'}; white-space:nowrap;">${amountStr}</td>
+      <td style="padding:8px 10px; text-align:center;">${editBtn}</td>
+    </tr>`;
+  }).join('');
+
+  const displayId = o.orderNumber || o.id;
+
+  Swal.fire({
+    title: 'ประวัติการชำระเงิน',
+    html: `
+      <div style="font-size:0.82rem; color:#64748B; margin-bottom:10px; text-align:left;">บิล: <strong>${displayId}</strong> &nbsp;|&nbsp; ลูกค้า: <strong>${o.customer}</strong></div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%; font-size:0.85rem; border-collapse:collapse; text-align:left;">
+          <thead><tr style="background:#F1F5F9;">
+            <th style="padding:8px 10px; color:#64748B; font-weight:600; font-size:0.78rem;">งวด</th>
+            <th style="padding:8px 10px; color:#64748B; font-weight:600; font-size:0.78rem;">วันที่</th>
+            <th style="padding:8px 10px; color:#64748B; font-weight:600; font-size:0.78rem;">ช่องทาง</th>
+            <th style="padding:8px 10px; text-align:right; color:#64748B; font-weight:600; font-size:0.78rem;">ยอด</th>
+            <th style="padding:8px 10px;"></th>
+          </tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    `,
+    showConfirmButton: false,
+    showCloseButton: true,
+    width: '520px'
+  });
+}
+
+export function editInstallmentTerms(orderId) {
+  const o = state.allOrders.find(x => x.id === orderId);
+  if (!o) return;
+
+  const currentTerms = Number(o.instTerms) || 1;
+  const paidMonths = getPaidMonths(o);
+  const paidAmount = Number(o.instPaid) || 0;
+  const totalPrice = Number(o.totalPrice) || 0;
+  const remainingBalance = Math.max(0, totalPrice - paidAmount);
+  const minTerms = paidMonths + 1;
+
+  Swal.fire({
+    title: 'แก้ไขจำนวนเดือน',
+    html: `
+      <div style="text-align:left; margin-bottom:10px; font-size:0.85rem; color:#4B5563; background:#F8FAFC; padding:8px 12px; border-radius:6px; border:1px solid #E2E8F0;">
+        จ่ายไปแล้ว <strong>${paidMonths} งวด</strong> &nbsp;|&nbsp; ยอดคงเหลือ: <strong style="color:var(--primary);">€${remainingBalance.toFixed(2)}</strong>
+      </div>
+      <label style="display:block; text-align:left; font-size:0.85rem; font-weight:600; color:#374151; margin-bottom:4px;">จำนวนเดือนทั้งหมด (ขั้นต่ำ ${minTerms} เดือน)</label>
+      <input type="number" id="swal-edit-terms" class="c-input" value="${currentTerms}" min="${minTerms}" step="1" style="text-align:center; font-size:1rem; font-weight:700;">
+      <div id="swal-monthly-preview" style="margin-top:10px; text-align:center; font-size:0.9rem; color:var(--primary-lt); font-weight:600; padding:6px; background:#EEF2FF; border-radius:6px;"></div>
+    `,
+    didOpen: () => {
+      const input = document.getElementById('swal-edit-terms');
+      const preview = document.getElementById('swal-monthly-preview');
+      const updatePreview = () => {
+        const newTerms = Math.max(minTerms, parseInt(input.value) || minTerms);
+        const remaining = newTerms - paidMonths;
+        const monthly = remaining > 0 ? remainingBalance / remaining : 0;
+        preview.innerText = `ยอดผ่อนต่อเดือน (ใหม่): €${monthly.toFixed(2)} / เดือน`;
+      };
+      input.addEventListener('input', updatePreview);
+      updatePreview();
+    },
+    showCancelButton: true,
+    confirmButtonText: 'บันทึก',
+    cancelButtonText: 'ยกเลิก',
+    confirmButtonColor: '#2D6A4F'
+  }).then(async res => {
+    if (!res.isConfirmed) return;
+    const newTerms = Math.max(minTerms, parseInt(document.getElementById('swal-edit-terms').value) || currentTerms);
+    const remainingTerms = Math.max(1, newTerms - paidMonths);
+    const newMonthly = Number((remainingBalance / remainingTerms).toFixed(2));
+
+    try {
+      await pb.collection('orders').update(orderId, { instTerms: newTerms, instMonthly: newMonthly });
+      Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'แก้ไขจำนวนเดือนสำเร็จ' });
+    } catch(e) { Swal.fire('Error', e.message, 'error'); }
+  });
 }
 
 
