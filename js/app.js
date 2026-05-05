@@ -5,7 +5,7 @@ import { toggleSidebar, toggleCart, closeAllPanels, copyCustomerLink, togglePaym
 import { setBrand, filterProducts, renderProducts, renderSets, addToCartByIndex, addSetToCart, updateQty, clearCart, updateCart, togglePriceMode } from './pos.js';
 import { setProdBrand, filterManageProducts, renderProductManage, renderSetsManage, showProductModal, saveProduct, delProduct, showSetModal, toggleSetItemQty, filterSetItems, calcSetTotal, saveProductSet, delProductSet } from './products.js';
 import { populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer } from './customers.js';
-import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory } from './orders.js';
+import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment } from './orders.js';
 import { checkAuth, loginWithEmail, loginWithOAuth2Redirect, handleOAuth2Callback, logout, updateSidebarProfile, showProfileModal } from './auth.js';
 
 function switchView(view) {
@@ -137,7 +137,7 @@ Object.assign(window, {
   setProdBrand, filterManageProducts, renderProductManage, renderSetsManage, showProductModal, saveProduct, delProduct, showSetModal, toggleSetItemQty, filterSetItems, calcSetTotal, saveProductSet, delProductSet,
   populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer,
   submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment,
-  markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, showProfileModal, logout
+  markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, showProfileModal, logout
 });
 
 

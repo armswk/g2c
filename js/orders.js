@@ -503,6 +503,50 @@ export function editInstallmentAmount(orderId, histIndex) {
   });
 }
 
+export function deleteInstallmentPayment(orderId, histIndex) {
+  const o = state.allOrders.find(x => x.id === orderId);
+  if (!o) return;
+
+  let hist = o.instHistory || [];
+  if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
+  if (!Array.isArray(hist)) hist = [];
+
+  const entry = hist[histIndex];
+  if (!entry) return;
+
+  Swal.fire({
+    title: 'ยืนยันการลบ?',
+    html: `ต้องการลบประวัติการรับชำระงวดที่ <strong>${entry.term}</strong> ยอด <strong>€${Number(entry.amount).toFixed(2)}</strong> ใช่หรือไม่?`,
+    icon: 'warning',
+    showCancelButton: true,
+    confirmButtonColor: '#DC2626',
+    confirmButtonText: 'ลบรายการนี้',
+    cancelButtonText: 'ยกเลิก'
+  }).then(async res => {
+    if (!res.isConfirmed) return;
+
+    hist.splice(histIndex, 1);
+
+    const newInstPaid = Number(hist
+      .filter(h => h.method && h.method !== 'รอดำเนินการ')
+      .reduce((sum, h) => sum + (Number(h.amount) || 0), 0).toFixed(2));
+    const totalPrice = Number(o.totalPrice) || 0;
+    const paidMonthsNew = hist.filter(h => h.method && h.method !== 'รอดำเนินการ').length;
+    const remainingTermsNew = Math.max(1, (Number(o.instTerms) || 1) - paidMonthsNew);
+    const remainingBalanceNew = Math.max(0, totalPrice - newInstPaid);
+    const newMonthly = Number((remainingBalanceNew > 0 ? remainingBalanceNew / remainingTermsNew : 0).toFixed(2));
+
+    let payload = { instHistory: hist, instPaid: newInstPaid, instMonthly: newMonthly };
+    if (newInstPaid >= totalPrice) payload.paymentStatus = 'จ่ายแล้ว';
+    else if (o.paymentStatus === 'จ่ายแล้ว') payload.paymentStatus = 'ผ่อน';
+
+    try {
+      await pb.collection('orders').update(orderId, payload);
+      Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบรายการสำเร็จ' });
+    } catch(e) { Swal.fire('Error', e.message, 'error'); }
+  });
+}
+
 export function showInstallmentHistory(orderId) {
   const o = state.allOrders.find(x => x.id === orderId);
   if (!o) return;
@@ -511,27 +555,28 @@ export function showInstallmentHistory(orderId) {
   if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
   if (!Array.isArray(hist)) hist = [];
 
-  if (hist.length === 0) {
+  const realPayments = hist.filter(h => h.method && h.method !== 'รอดำเนินการ' && h.amount != null);
+  if (realPayments.length === 0) {
     Swal.fire({ title: 'ประวัติการชำระเงิน', text: 'ยังไม่มีประวัติการชำระ', icon: 'info' });
     return;
   }
 
-  const rows = hist.map((h, idx) => {
-    let dObj = new Date(h.date); let safeDateObj = isNaN(dObj.getTime()) ? new Date() : dObj;
-    const dateStr = safeDateObj.toLocaleDateString('th-TH');
-    const isPending = h.method === 'รอดำเนินการ';
-    const amountStr = (!isPending && h.amount != null) ? `€${Number(h.amount).toFixed(2)}` : '—';
-    const editBtn = !isPending
-      ? `<button onclick="editInstallmentAmount('${o.id}', ${idx})" style="background:none; border:1px solid #CBD5E1; border-radius:4px; padding:2px 8px; font-size:0.78rem; color:#475569; cursor:pointer; font-family:inherit;"><i class="ph ph-pencil-simple"></i></button>`
-      : '';
-    return `<tr style="border-top:1px solid #E2E8F0; ${isPending ? 'opacity:0.55;' : ''}">
-      <td style="padding:8px 10px; font-weight:600; color:#1E3A5F; white-space:nowrap;">งวดที่ ${h.term}</td>
-      <td style="padding:8px 10px; color:#374151; white-space:nowrap;">${dateStr}</td>
-      <td style="padding:8px 10px; color:#374151;">${h.method}</td>
-      <td style="padding:8px 10px; text-align:right; font-weight:700; color:${isPending ? '#9CA3AF' : '#2D6A4F'}; white-space:nowrap;">${amountStr}</td>
-      <td style="padding:8px 10px; text-align:center;">${editBtn}</td>
-    </tr>`;
-  }).join('');
+  const rows = hist
+    .map((h, originalIdx) => ({ h, originalIdx }))
+    .filter(({ h }) => h.method && h.method !== 'รอดำเนินการ' && h.amount != null)
+    .map(({ h, originalIdx }, displayIdx) => {
+      let dObj = new Date(h.date); let safeDateObj = isNaN(dObj.getTime()) ? new Date() : dObj;
+      const dateStr = safeDateObj.toLocaleDateString('th-TH');
+      const editBtn = `<button onclick="editInstallmentAmount('${o.id}', ${originalIdx})" style="background:none; border:1px solid #CBD5E1; border-radius:4px; padding:2px 8px; font-size:0.78rem; color:#475569; cursor:pointer; font-family:inherit;"><i class="ph ph-pencil-simple"></i></button>`;
+      const deleteBtn = `<button onclick="deleteInstallmentPayment('${o.id}', ${originalIdx})" style="background:none; border:1px solid #FCA5A5; border-radius:4px; padding:2px 8px; font-size:0.78rem; color:#DC2626; cursor:pointer; font-family:inherit; margin-left:4px;"><i class="ph ph-trash"></i></button>`;
+      return `<tr style="border-top:1px solid #E2E8F0;">
+        <td style="padding:8px 10px; font-weight:600; color:#1E3A5F; white-space:nowrap;">งวดที่ ${displayIdx + 1}</td>
+        <td style="padding:8px 10px; color:#374151; white-space:nowrap;">${dateStr}</td>
+        <td style="padding:8px 10px; color:#374151;">${h.method}</td>
+        <td style="padding:8px 10px; text-align:right; font-weight:700; color:#2D6A4F; white-space:nowrap;">€${Number(h.amount).toFixed(2)}</td>
+        <td style="padding:8px 10px; text-align:center; white-space:nowrap;">${editBtn}${deleteBtn}</td>
+      </tr>`;
+    }).join('');
 
   const displayId = o.orderNumber || o.id;
 
