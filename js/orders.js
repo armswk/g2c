@@ -60,8 +60,9 @@ export async function submitOrder() {
 
   const discountInput = document.getElementById('discountInput');
   const discount = Math.max(0, Number(discountInput ? discountInput.value : 0) || 0);
+  const arBalance = Math.max(0, Number(document.getElementById('arBalanceInput')?.value || 0) || 0);
   const subtotal = Number(explodedCart.reduce((s, i) => s + (i.price * i.qty), 0).toFixed(2));
-  const netTotalPrice = Number(Math.max(0, subtotal - discount).toFixed(2));
+  const netTotalPrice = Number(Math.max(0, subtotal - discount - arBalance).toFixed(2));
 
   const instTermsVal = paymentStatus === 'ผ่อน' ? Math.max(1, Number(document.getElementById('instTerms').value) || 1) : 0;
   const instMonthly = instTermsVal > 0 ? Number((netTotalPrice / instTermsVal).toFixed(2)) : 0;
@@ -73,6 +74,7 @@ export async function submitOrder() {
     remark: document.getElementById('orderRemark').value,
     items: explodedCart,
     discount: discount,
+    ar_balance: arBalance,
     totalPrice: netTotalPrice,
     totalPV: Number(explodedCart.reduce((s, i) => s + (i.pv * i.qty), 0).toFixed(2)),
     paymentStatus,
@@ -115,6 +117,7 @@ export function resetForm() {
   if(document.getElementById('orderRef')) document.getElementById('orderRef').value = ''; 
   if(document.getElementById('paymentStatus')) document.getElementById('paymentStatus').value = 'ยังไม่จ่าย';
   if(document.getElementById('discountInput')) document.getElementById('discountInput').value = '';
+  if(document.getElementById('arBalanceInput')) document.getElementById('arBalanceInput').value = '0';
   if(document.getElementById('instTerms')) document.getElementById('instTerms').value = '';
   const calcDisplay = document.getElementById('instCalcDisplay'); if(calcDisplay) calcDisplay.style.display = 'none';
 
@@ -201,6 +204,7 @@ export function loadHistory() {
           </div>
         </div>
         <div style="background:#F8FAFC; padding:12px 15px; border-radius:8px; margin-bottom:12px; border: 1px solid #E2E8F0;">${itemsHtml}</div>
+        ${Number(g.ar_balance) > 0 ? `<div style="font-size:0.85rem; color:#1E40AF; background:#EFF6FF; padding:8px 12px; border-radius:6px; margin-bottom:8px; border: 1px solid #BFDBFE; display:flex; justify-content:space-between; align-items:center;"><span><i class="ph-fill ph-bank" style="color:#3B82F6;"></i> <span style="font-weight:600;">AR Balance:</span> -€${Number(g.ar_balance).toFixed(2)}</span></div>` : ''}
         ${g.remark ? `<div style="font-size:0.85rem; color:#92400E; background:#FFFBEB; padding:8px 12px; border-radius:6px; margin-bottom:12px; border: 1px solid #FDE68A;"><i class="ph-fill ph-note" style="color:#D97706;"></i> <span style="font-weight:600;">หมายเหตุ:</span> ${g.remark}</div>` : ''}
         <div style="display:flex; gap:15px; justify-content: flex-end; flex-wrap: wrap;">
           ${quickPayBtn}
@@ -283,7 +287,9 @@ export function printReceipt(orderId) {
       <div style="font-size: 12px; margin-bottom: 5px;"><span class="font-bold">ลูกค้า:</span> ${group.customer}</div>
       ${remarkHtml}
       <hr><div style="margin-bottom: 10px; font-weight: 600; font-size: 13px;">รายการสินค้า</div>${itemsHtml}<hr>
-      ${Number(group.discount) > 0 ? `<div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #333;"><span>ยอดรวมสินค้า</span><span>€${(Number(group.totalPrice) + Number(group.discount)).toFixed(2)}</span></div><div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #C0392B;"><span>ส่วนลด</span><span>-€${Number(group.discount).toFixed(2)}</span></div>` : ''}
+      ${(Number(group.discount) > 0 || Number(group.ar_balance) > 0) ? `<div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #333;"><span>ยอดรวมสินค้า</span><span>€${(Number(group.totalPrice) + Number(group.discount||0) + Number(group.ar_balance||0)).toFixed(2)}</span></div>` : ''}
+      ${Number(group.discount) > 0 ? `<div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #C0392B;"><span>ส่วนลด</span><span>-€${Number(group.discount).toFixed(2)}</span></div>` : ''}
+      ${Number(group.ar_balance) > 0 ? `<div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #1D4ED8;"><span>AR Balance</span><span>-€${Number(group.ar_balance).toFixed(2)}</span></div>` : ''}
       <div class="flex-between font-bold" style="font-size: 18px; margin-top: 10px;"><span>ยอดสุทธิ</span><span>€${(Number(group.totalPrice)||0).toFixed(2)}</span></div>
       <div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #333;"><span>PV รวม</span><span>${(Number(group.totalPV)||0).toFixed(2)} PV</span></div>
       <hr><div class="text-center" style="font-size: 12px; margin-top: 20px;">ขอบคุณที่ไว้วางใจใช้บริการครับ/ค่ะ</div>
@@ -317,6 +323,7 @@ export function editOrder(id) {
       }
       if(document.getElementById('orderRef')) document.getElementById('orderRef').value = order.orderRef || '';
       if(document.getElementById('discountInput')) document.getElementById('discountInput').value = order.discount || '';
+      if(document.getElementById('arBalanceInput')) document.getElementById('arBalanceInput').value = order.ar_balance || '0';
       if(document.getElementById('instTerms')) document.getElementById('instTerms').value = order.instTerms || '';
 
       document.getElementById('editModeBanner').style.display = 'flex';

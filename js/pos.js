@@ -152,7 +152,9 @@ export function updateCart() {
   const subtotalEl = document.getElementById('cartSubtotal'); if(subtotalEl) subtotalEl.innerText = `€${totalEuro.toFixed(2)}`;
   const discountInput = document.getElementById('discountInput');
   const discount = Math.max(0, Number(discountInput ? discountInput.value : 0) || 0);
-  const netTotal = Math.max(0, totalEuro - discount);
+  const arBalanceInput = document.getElementById('arBalanceInput');
+  const arBalance = Math.max(0, Number(arBalanceInput ? arBalanceInput.value : 0) || 0);
+  const netTotal = Math.max(0, totalEuro - discount - arBalance);
   document.getElementById('cartTotal').innerText = `€${netTotal.toFixed(2)}`;
   document.getElementById('cartTotalPV').innerText = `${totalPv.toFixed(2)} PV`;
   document.getElementById('checkoutBtn').disabled = false;
