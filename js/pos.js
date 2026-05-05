@@ -133,6 +133,7 @@ export function updateCart() {
   if(state.cart.length === 0) {
     itemsContainer.innerHTML = '<div style="text-align:center; color:#cbd5e1; margin-top:60px;"><i class="ph ph-shopping-bag" style="font-size: 4rem; margin-bottom: 10px;"></i><div style="font-weight: 600; color: #94a3b8;">ยังไม่มีรายการ</div></div>';
     document.getElementById('cartTotal').innerText = '€0.00'; document.getElementById('cartTotalPV').innerText = '0.00 PV'; document.getElementById('checkoutBtn').disabled = true;
+    const subtotalElEmpty = document.getElementById('cartSubtotal'); if(subtotalElEmpty) subtotalElEmpty.innerText = '€0.00';
     if(badge) { badge.style.display = 'none'; badge.innerText = '0'; }
     return;
   }
@@ -148,7 +149,11 @@ export function updateCart() {
       </div>`;
   }).join('');
   
-  document.getElementById('cartTotal').innerText = `€${totalEuro.toFixed(2)}`;
+  const subtotalEl = document.getElementById('cartSubtotal'); if(subtotalEl) subtotalEl.innerText = `€${totalEuro.toFixed(2)}`;
+  const discountInput = document.getElementById('discountInput');
+  const discount = Math.max(0, Number(discountInput ? discountInput.value : 0) || 0);
+  const netTotal = Math.max(0, totalEuro - discount);
+  document.getElementById('cartTotal').innerText = `€${netTotal.toFixed(2)}`;
   document.getElementById('cartTotalPV').innerText = `${totalPv.toFixed(2)} PV`;
   document.getElementById('checkoutBtn').disabled = false;
   

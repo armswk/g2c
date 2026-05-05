@@ -36,13 +36,18 @@ export async function submitOrder() {
      } else { explodedCart.push(item); }
   });
 
-  const payload = { 
-    orderNumber: state.currentEditId ? undefined : 'OR-' + Date.now(), 
-    customerName: customerName, 
-    orderDate: new Date(orderDate).toISOString(), 
-    remark: document.getElementById('orderRemark').value, 
-    items: explodedCart, 
-    totalPrice: Number(explodedCart.reduce((s, i) => s + (i.price * i.qty), 0).toFixed(2)),
+  const discountInput = document.getElementById('discountInput');
+  const discount = Math.max(0, Number(discountInput ? discountInput.value : 0) || 0);
+  const subtotal = Number(explodedCart.reduce((s, i) => s + (i.price * i.qty), 0).toFixed(2));
+
+  const payload = {
+    orderNumber: state.currentEditId ? undefined : 'OR-' + Date.now(),
+    customerName: customerName,
+    orderDate: new Date(orderDate).toISOString(),
+    remark: document.getElementById('orderRemark').value,
+    items: explodedCart,
+    discount: discount,
+    totalPrice: Number(Math.max(0, subtotal - discount).toFixed(2)),
     totalPV: Number(explodedCart.reduce((s, i) => s + (i.pv * i.qty), 0).toFixed(2)),
     paymentStatus, 
     paymentMethod, 
@@ -82,9 +87,10 @@ export function resetForm() {
   document.getElementById('customerSelect').value = ''; 
   if(document.getElementById('orderRef')) document.getElementById('orderRef').value = ''; 
   if(document.getElementById('paymentStatus')) document.getElementById('paymentStatus').value = 'ยังไม่จ่าย';
-  
-  togglePaymentOptions(); 
-  closeAllPanels(); 
+  if(document.getElementById('discountInput')) document.getElementById('discountInput').value = '';
+
+  togglePaymentOptions();
+  closeAllPanels();
 }
 
 export function updateDashboard() {
@@ -244,6 +250,7 @@ export function printReceipt(orderId) {
       <div style="font-size: 12px; margin-bottom: 5px;"><span class="font-bold">ลูกค้า:</span> ${group.customer}</div>
       ${remarkHtml}
       <hr><div style="margin-bottom: 10px; font-weight: 600; font-size: 13px;">รายการสินค้า</div>${itemsHtml}<hr>
+      ${Number(group.discount) > 0 ? `<div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #333;"><span>ยอดรวมสินค้า</span><span>€${(Number(group.totalPrice) + Number(group.discount)).toFixed(2)}</span></div><div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #C0392B;"><span>ส่วนลด</span><span>-€${Number(group.discount).toFixed(2)}</span></div>` : ''}
       <div class="flex-between font-bold" style="font-size: 18px; margin-top: 10px;"><span>ยอดสุทธิ</span><span>€${(Number(group.totalPrice)||0).toFixed(2)}</span></div>
       <div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #333;"><span>PV รวม</span><span>${(Number(group.totalPV)||0).toFixed(2)} PV</span></div>
       <hr><div class="text-center" style="font-size: 12px; margin-top: 20px;">ขอบคุณที่ไว้วางใจใช้บริการครับ/ค่ะ</div>
@@ -276,8 +283,9 @@ export function editOrder(id) {
         if(document.getElementById('paymentMethodFull')) document.getElementById('paymentMethodFull').value = order.paymentMethod || 'เงินสด';
       }
       if(document.getElementById('orderRef')) document.getElementById('orderRef').value = order.orderRef || '';
-      
-      document.getElementById('editModeBanner').style.display = 'flex'; 
+      if(document.getElementById('discountInput')) document.getElementById('discountInput').value = order.discount || '';
+
+      document.getElementById('editModeBanner').style.display = 'flex';
       document.getElementById('editModeText').innerText = `กำลังแก้ไขรหัส: ${id}`;
       
       updateCart(); 
