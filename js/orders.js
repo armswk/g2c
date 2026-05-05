@@ -364,7 +364,7 @@ export function renderInstallments() {
 
   list.innerHTML = displayArr.map(o => {
      let isAuto = o.instType === 'บัญชีลูกค้า';
-     let typeBadge = isAuto ? `<span style="background:#E0F2FE; color:#0284C7; padding:2px 8px; border-radius:4px; font-size:0.75rem;">บัญชีลูกค้า (Auto)</span>` : `<span style="background:#FEF3C7; color:#D97706; padding:2px 8px; border-radius:4px; font-size:0.75rem;">ผ่อนกับเรา (Manual)</span>`;
+     let typeBadge = isAuto ? `<span style="background:#E0F2FE; color:#0284C7; padding:2px 8px; border-radius:4px; font-size:0.75rem; white-space:nowrap;">บัญชีลูกค้า (Auto)</span>` : `<span style="background:#FEF3C7; color:#D97706; padding:2px 8px; border-radius:4px; font-size:0.75rem; white-space:nowrap;">ผ่อนกับเรา (Manual)</span>`;
      const paidMonths = getPaidMonths(o);
      const totalPrice = Number(o.totalPrice) || 0;
      const paidAmount = Number(o.instPaid) || 0;
@@ -387,13 +387,19 @@ export function renderInstallments() {
 
      return `
       <div style="padding: 20px; border-bottom: 1px solid var(--border);">
-        <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-           <div style="flex:1; min-width:0;">
-              <div style="font-weight:700; color:var(--primary-dk); font-size:1.1rem; margin-bottom:5px;">👤 ${o.customer} ${typeBadge}</div>
-              <div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px;"><i class="ph-fill ph-receipt"></i> บิล: ${displayId} | ยอดรวม: €${totalPrice.toFixed(2)} | ${o.instTerms} เดือน</div>
-              <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">${editTermsBtn}<span style="color:var(--primary-lt); font-weight:600; font-size:0.85rem;">(งวดถัดไป €${nextMonthly.toFixed(2)})</span></div>
-           </div>
-           <div style="text-align:right; margin-left:12px;">${statusText}</div>
+        <div class="flex flex-wrap items-start gap-2 mb-2">
+          <span style="font-weight:700; color:var(--primary-dk); font-size:1.1rem; line-height:1.4;">👤 ${o.customer}</span>
+          ${typeBadge}
+        </div>
+        <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px; display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
+          <i class="ph-fill ph-receipt"></i>
+          <span class="break-all">บิล: ${displayId}</span>
+          <span style="white-space:nowrap;">| ยอดรวม: €${totalPrice.toFixed(2)} | ${o.instTerms} เดือน</span>
+          ${editTermsBtn}
+        </div>
+        <div class="flex justify-between items-center mb-2" style="font-size:0.85rem;">
+          <span style="color:var(--primary-lt); font-weight:600;">(งวดถัดไป €${nextMonthly.toFixed(2)})</span>
+          <span>${statusText}</span>
         </div>
         <div style="background:#E2E8F0; height:8px; border-radius:4px; margin-bottom:15px; overflow:hidden;">
            <div style="background:var(--success); height:100%; width:${progress.toFixed(1)}%; transition:width 0.5s;"></div>
