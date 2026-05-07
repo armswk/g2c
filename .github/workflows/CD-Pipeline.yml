@@ -1,5 +1,6 @@
 name: CI/CD Pipeline (Build & Deploy to K3S)
 on:
+  workflow_dispatch:
   push:
     branches: [ "main" ]  
     paths-ignore:
