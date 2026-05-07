@@ -354,9 +354,11 @@ export function renderInstallments() {
   const filter = document.getElementById('instFilter').value;
   
   let displayArr = state.allOrders.filter(o => {
-     if(o.paymentStatus !== 'ผ่อน') return false;
-     if(filter === 'ONGOING') return getPaidMonths(o) < o.instTerms;
-     if(filter === 'DONE') return getPaidMonths(o) >= o.instTerms;
+     if (!o.instTerms || Number(o.instTerms) <= 0) return false;
+     const paid = Number(o.instPaid) || 0;
+     const total = Number(o.totalPrice) || 0;
+     if (filter === 'ONGOING') return paid < total;
+     if (filter === 'DONE') return paid >= total;
      return true;
   });
 
@@ -375,15 +377,20 @@ export function renderInstallments() {
      let progress = totalPrice > 0 ? Math.min((paidAmount / totalPrice) * 100, 100) : 0;
      let statusText = paidAmount >= totalPrice ? '<span style="color:var(--success); font-weight:700;"><i class="ph-bold ph-check"></i> ผ่อนครบแล้ว</span>' : `<span style="color:var(--accent); font-weight:700;">จ่ายไปแล้ว €${paidAmount.toFixed(2)} / €${totalPrice.toFixed(2)}</span>`;
 
+     const isFullyPaid = paidAmount >= totalPrice;
+
      let payBtn = '';
-     if (!isAuto && paidAmount < totalPrice) {
+     if (!isFullyPaid && !isAuto) {
         payBtn = `<button onclick="payInstallment('${o.id}', ${paidMonths + 1})" class="w-full sm:w-auto" style="background:var(--primary); color:#fff; border:none; padding:8px 15px; border-radius:6px; font-family:inherit; cursor:pointer; font-weight:600; font-size:0.85rem;"><i class="ph-bold ph-check-circle"></i> บันทึกชำระงวดที่ ${paidMonths + 1}</button>`;
+     } else if (isFullyPaid) {
+        payBtn = `<span style="display:flex; align-items:center; gap:6px; padding:8px 15px; border-radius:6px; background:#D1FAE5; color:#065F46; font-weight:700; font-size:0.85rem;"><i class="ph-bold ph-check-circle"></i> ชำระครบแล้ว</span>`;
      }
 
      const histBtn = `<button onclick="showInstallmentHistory('${o.id}')" class="w-full sm:w-auto" style="background:#F1F5F9; color:#374151; border:1px solid #CBD5E1; padding:8px 15px; border-radius:6px; font-family:inherit; cursor:pointer; font-weight:600; font-size:0.85rem;"><i class="ph ph-clock-counter-clockwise"></i> ประวัติการชำระเงิน</button>`;
 
      const displayId = o.orderNumber || o.id;
-     const editTermsBtn = `<button onclick="editInstallmentTerms('${o.id}')" style="background:none; cursor:pointer; color:var(--primary-lt); font-size:0.78rem; padding:2px 8px; border:1px solid var(--border); border-radius:4px; font-family:inherit; white-space:nowrap;"><i class="ph ph-pencil-simple"></i> แก้ไขเดือน</button>`;
+     const editTermsBtn = !isFullyPaid ? `<button onclick="editInstallmentTerms('${o.id}')" style="background:none; cursor:pointer; color:var(--primary-lt); font-size:0.78rem; padding:2px 8px; border:1px solid var(--border); border-radius:4px; font-family:inherit; white-space:nowrap;"><i class="ph ph-pencil-simple"></i> แก้ไขเดือน</button>` : '';
+     const nextMonthlyHtml = !isFullyPaid ? `<span style="color:var(--primary-lt); font-weight:600;">(งวดถัดไป €${nextMonthly.toFixed(2)})</span>` : `<span></span>`;
 
      return `
       <div style="padding: 20px; border-bottom: 1px solid var(--border);">
@@ -398,7 +405,7 @@ export function renderInstallments() {
           ${editTermsBtn}
         </div>
         <div class="flex justify-between items-center mb-2" style="font-size:0.85rem;">
-          <span style="color:var(--primary-lt); font-weight:600;">(งวดถัดไป €${nextMonthly.toFixed(2)})</span>
+          ${nextMonthlyHtml}
           <span>${statusText}</span>
         </div>
         <div style="background:#E2E8F0; height:8px; border-radius:4px; margin-bottom:15px; overflow:hidden;">
@@ -449,7 +456,11 @@ export function payInstallment(orderId, nextTerm) {
          hist.push({ term: nextTerm, date: new Date().toISOString(), method, amount });
 
          const newInstPaid = Number((paidAmount + amount).toFixed(2));
-         let payload = { instHistory: hist, instPaid: newInstPaid };
+         const paidMonthsNew = hist.filter(h => h.method && h.method !== 'รอดำเนินการ').length;
+         const remainingTermsNew = Math.max(1, (Number(o.instTerms) || 1) - paidMonthsNew);
+         const remainingBalanceNew = Math.max(0, totalPrice - newInstPaid);
+         const newMonthly = Number((remainingBalanceNew > 0 ? remainingBalanceNew / remainingTermsNew : 0).toFixed(2));
+         let payload = { instHistory: hist, instPaid: newInstPaid, instMonthly: newMonthly };
          if (newInstPaid >= totalPrice) payload.paymentStatus = 'จ่ายแล้ว';
 
          try {
