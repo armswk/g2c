@@ -34,6 +34,7 @@ jobs:
 
       # 2. Build Image ด้วย Buildah (เครื่องมือ Build ของ Podman)
       - name: 📦 Build and push Docker image
+        id: build-image
         uses: docker/build-push-action@v5
         with:
           context: .
