@@ -3,12 +3,12 @@ on:
   push:
     branches: [ "main" ]  
     paths-ignore:
-      - 'README.md'         # มองข้ามไฟล์ README.md
-      - 'docs/**'           # มองข้ามทุกไฟล์ที่อยู่ในโฟลเดอร์ docs/
-      - '.gitignore'        # มองข้ามไฟล์ตั้งค่า git
-      - 'LICENSE'           # มองข้ามไฟล์ License
-      - '**/*.md'           # มองข้ามไฟล์นามสกุล .md ทั้งหมดในโปรเจกต์
-      - '.vscode/**'        # มองข้ามการตั้งค่าของ VS Code
+      - 'README.md'
+      - '.github/**'           
+      - '.gitignore'        
+      - 'LICENSE'          
+      - '**/*.md'           
+      - '.vscode/**'        
 jobs:
   # ==========================================
   # JOB 1: สร้าง Image ด้วย Podman/Buildah
@@ -54,8 +54,6 @@ jobs:
   # ==========================================
   deploy-to-k3s:
     needs: build-and-push
-    # 🔥 ไฮไลท์: เปลี่ยนมารันบน Runner ใน K3s ของคุณ!
-    # (เปลี่ยนชื่อ label ให้ตรงกับที่คุณตั้งใน arc-runner-set)
     runs-on: arc-runner-set 
 
     steps:
