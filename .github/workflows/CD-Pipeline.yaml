@@ -1,0 +1,62 @@
+name: CI/CD Pipeline (Build & Deploy to K3S)
+on:
+  push:
+    branches: [ "main" ]  
+
+jobs:
+  # ==========================================
+  # JOB 1: สร้าง Image ด้วย Podman/Buildah
+  # ==========================================
+  build-and-push:
+    runs-on: arc-runner-set # รันบน ARC ของคุณ
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      # 1. Login เข้า GHCR ด้วย Podman
+      - name: 🔑 Log in to GHCR
+        uses: redhat-actions/podman-login@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 2. Build Image ด้วย Buildah (เครื่องมือ Build ของ Podman)
+      - name: 📦 Build Image
+        id: build-image
+        uses: redhat-actions/buildah-build@v2
+        with:
+          image: g2c-web
+          tags: ${{ github.sha }} latest
+          containerfiles: |
+            ./Dockerfile
+
+      # 3. Push ขึ้น GHCR
+      - name: 🚀 Push To GHCR
+        uses: redhat-actions/push-to-registry@v2
+        with:
+          image: ${{ steps.build-image.outputs.image }}
+          tags: ${{ steps.build-image.outputs.tags }}
+          registry: ghcr.io/armswk
+
+  # ==========================================
+  # JOB 2: สั่ง K3S ให้ Deploy (ใช้ ARC ของคุณเอง!)
+  # ==========================================
+  deploy-to-k3s:
+    needs: build-and-push
+    # 🔥 ไฮไลท์: เปลี่ยนมารันบน Runner ใน K3s ของคุณ!
+    # (เปลี่ยนชื่อ label ให้ตรงกับที่คุณตั้งใน arc-runner-set)
+    runs-on: arc-runner-set 
+
+    steps:
+      - name: 🚀 Deploy to K3S (Local execution)
+        run: |
+          # ไม่ต้อง SSH แล้ว! สั่ง kubectl ตรงๆ จากในคลัสเตอร์ได้เลย
+          kubectl set image deployment/g2c-web-deployment g2c-web-container=ghcr.io/armswk/g2c-web:${{ github.sha }} -n g2c
+          
+          # รอจนกว่า Pod ใหม่จะรันเสร็จ
+          kubectl rollout status deployment/g2c-web-deployment -n g2c
