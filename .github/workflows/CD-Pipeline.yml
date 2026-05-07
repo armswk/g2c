@@ -1,21 +1,15 @@
-name: CI/CD Pipeline (Build & Deploy to K3S)
+name: CI/CD Pipeline (Build & Deploy Local)
+
 on:
-  workflow_dispatch:
   push:
-    branches: [ "main" ]  
+    branches: [ "main" ]
     paths-ignore:
       - 'README.md'
-      - '.github/**'           
-      - '.gitignore'        
-      - 'LICENSE'          
-      - '**/*.md'           
-      - '.vscode/**'        
+  workflow_dispatch:
+
 jobs:
-  # ==========================================
-  # JOB 1: สร้าง Image ด้วย Podman/Buildah
-  # ==========================================
-  build-and-push:
-    runs-on: arc-runner-set # รันบน ARC ของคุณ
+  build-and-deploy:
+    runs-on: arc-runner-set
     permissions:
       contents: read
       packages: write
@@ -24,43 +18,35 @@ jobs:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
-      # 1. Login เข้า GHCR
-      - name: 🔑 Log in to GitHub Container Registry
+      # 👇 1. เพิ่ม id: vars และเปลี่ยนไปใช้ GITHUB_OUTPUT แทน
+      - name: ✂️ Get Short SHA
+        id: vars
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: 🔑 Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build Image และ Push ไปที่ GHCR
+      # 👇 2. เปลี่ยนการอ้างอิงเป็น steps.vars.outputs.SHORT_SHA
       - name: 📦 Build and push Docker image
-        id: build-image
         uses: docker/build-push-action@v5
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/g2c-web:${{ github.sha }}
+            ghcr.io/${{ github.repository_owner }}/g2c-web:${{ steps.vars.outputs.SHORT_SHA }}
             ghcr.io/${{ github.repository_owner }}/g2c-web:latest
 
-  # ==========================================
-  # JOB 2: สั่ง K3S ให้ Deploy (ใช้ ARC ของคุณเอง!)
-  # ==========================================
-  deploy-to-k3s:
-    needs: build-and-push
-    runs-on: arc-runner-set
-    steps:
-      - name: 🛠️ Setup kubectl
+      - name: 🛠️ Install kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x kubectl
-          mkdir -p ~/.local/bin
-          mv kubectl ~/.local/bin/
-          echo "$HOME/.local/bin" >> $GITHUB_PATH
-      - name: 🚀 Deploy to K3S (Local execution)
+          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+
+      # 👇 3. เปลี่ยนการอ้างอิงตรงนี้ด้วยเช่นกัน
+      - name: 🚀 Deploy to K3S
         run: |
-          # ไม่ต้อง SSH แล้ว! สั่ง kubectl ตรงๆ จากในคลัสเตอร์ได้เลย
-          kubectl set image deployment/g2c-frontend g2c-web-container=ghcr.io/armswk/g2c-web:${{ github.sha }} -n g2c
-          
-          # รอจนกว่า Pod ใหม่จะรันเสร็จ
+          kubectl set image deployment/g2c-frontend g2c-web-container=ghcr.io/${{ github.repository_owner }}/g2c-web:${{ steps.vars.outputs.SHORT_SHA }} -n g2c
           kubectl rollout status deployment/g2c-frontend -n g2c
