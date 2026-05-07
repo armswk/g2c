@@ -60,7 +60,7 @@ jobs:
       - name: 🚀 Deploy to K3S (Local execution)
         run: |
           # ไม่ต้อง SSH แล้ว! สั่ง kubectl ตรงๆ จากในคลัสเตอร์ได้เลย
-          kubectl set image deployment/g2c-web-deployment g2c-web-container=ghcr.io/armswk/g2c-web:${{ github.sha }} -n g2c
+          kubectl set image deployment/g2c-frontend g2c-web-container=ghcr.io/armswk/g2c-web:${{ github.sha }} -n g2c
           
           # รอจนกว่า Pod ใหม่จะรันเสร็จ
-          kubectl rollout status deployment/g2c-web-deployment -n g2c
+          kubectl rollout status deployment/g2c-frontend -n g2c
