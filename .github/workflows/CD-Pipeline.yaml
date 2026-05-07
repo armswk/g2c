@@ -22,7 +22,10 @@ jobs:
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
-
+      - name: 🛠️ Install Podman & Buildah
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman buildah
       # 1. Login เข้า GHCR ด้วย Podman
       - name: 🔑 Log in to GHCR
         uses: redhat-actions/podman-login@v1
