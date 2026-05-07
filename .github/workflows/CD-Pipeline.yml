@@ -32,7 +32,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 2. Build Image ด้วย Buildah (เครื่องมือ Build ของ Podman)
+      # 2. Build Image และ Push ไปที่ GHCR
       - name: 📦 Build and push Docker image
         id: build-image
         uses: docker/build-push-action@v5
@@ -42,14 +42,6 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository_owner }}/g2c-web:${{ github.sha }}
             ghcr.io/${{ github.repository_owner }}/g2c-web:latest
-
-      # 3. Push ขึ้น GHCR
-      - name: 🚀 Push To GHCR
-        uses: redhat-actions/push-to-registry@v2
-        with:
-          image: ${{ steps.build-image.outputs.image }}
-          tags: ${{ steps.build-image.outputs.tags }}
-          registry: ghcr.io/armswk
 
   # ==========================================
   # JOB 2: สั่ง K3S ให้ Deploy (ใช้ ARC ของคุณเอง!)
