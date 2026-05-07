@@ -8,7 +8,7 @@ RUN rm -rf /usr/share/nginx/html/*
 COPY css/ /usr/share/nginx/html/css/
 COPY icon/ /usr/share/nginx/html/icon/
 COPY js/ /usr/share/nginx/html/js/
-COPY index.html manifest.json migration.html sw.js /usr/share/nginx/html/
+COPY index.html manifest.json sw.js /usr/share/nginx/html/
 
 # ก๊อปปี้ไฟล์ default.conf ไปวางทับค่าเริ่มต้นของ Nginx
 # (ตัวนี้คือไฟล์ที่ทำ Reverse Proxy ไปหา PocketBase)
