@@ -2,7 +2,13 @@ name: CI/CD Pipeline (Build & Deploy to K3S)
 on:
   push:
     branches: [ "main" ]  
-
+    paths-ignore:
+      - 'README.md'         # มองข้ามไฟล์ README.md
+      - 'docs/**'           # มองข้ามทุกไฟล์ที่อยู่ในโฟลเดอร์ docs/
+      - '.gitignore'        # มองข้ามไฟล์ตั้งค่า git
+      - 'LICENSE'           # มองข้ามไฟล์ License
+      - '**/*.md'           # มองข้ามไฟล์นามสกุล .md ทั้งหมดในโปรเจกต์
+      - '.vscode/**'        # มองข้ามการตั้งค่าของ VS Code
 jobs:
   # ==========================================
   # JOB 1: สร้าง Image ด้วย Podman/Buildah
