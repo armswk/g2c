@@ -53,5 +53,5 @@ jobs:
       # 👇 3. เปลี่ยนการอ้างอิงตรงนี้ด้วยเช่นกัน
       - name: 🚀 Deploy to K3S
         run: |
-          kubectl set image deployment/g2c-frontend ghcr.io/${{ github.repository_owner }}/g2c-web:${{ steps.vars.outputs.SHORT_SHA }} -n g2c
+          kubectl set image deployment/g2c-frontend frontend=ghcr.io/${{ github.repository_owner }}/g2c-web:${{ steps.vars.outputs.SHORT_SHA }} -n g2c
           kubectl rollout status deployment/g2c-frontend -n g2c
