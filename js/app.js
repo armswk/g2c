@@ -4,7 +4,7 @@ import { state } from './state.js';
 import { toggleSidebar, toggleCart, closeAllPanels, copyCustomerLink, togglePaymentOptions } from './ui.js';
 import { setBrand, filterProducts, renderProducts, renderSets, addToCartByIndex, addSetToCart, updateQty, clearCart, updateCart, togglePriceMode } from './pos.js';
 import { setProdBrand, filterManageProducts, renderProductManage, renderSetsManage, showProductModal, saveProduct, delProduct, showSetModal, toggleSetItemQty, filterSetItems, calcSetTotal, saveProductSet, delProductSet } from './products.js';
-import { populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer, cusState, goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusMonth, updateCusSearch } from './customers.js';
+import { populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer, cusState, goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch } from './customers.js';
 import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment } from './orders.js';
 import { checkAuth, loginWithEmail, loginWithOAuth2Redirect, handleOAuth2Callback, logout, updateSidebarProfile, showProfileModal } from './auth.js';
 
@@ -103,7 +103,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   if(document.getElementById('orderDate')) document.getElementById('orderDate').valueAsDate = new Date();
   const today = new Date();
   const defaultMonth = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0');
-  if(document.getElementById('cusMonth')) document.getElementById('cusMonth').value = defaultMonth;
   if(document.getElementById('dashMonth')) document.getElementById('dashMonth').value = defaultMonth;
 
   Swal.fire({ title: 'กำลังโหลดข้อมูล...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
@@ -136,7 +135,7 @@ Object.assign(window, {
   setBrand, filterProducts, renderProducts, renderSets, addToCartByIndex, addSetToCart, updateQty, clearCart, updateCart, togglePriceMode,
   setProdBrand, filterManageProducts, renderProductManage, renderSetsManage, showProductModal, saveProduct, delProduct, showSetModal, toggleSetItemQty, filterSetItems, calcSetTotal, saveProductSet, delProductSet,
   populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer,
-  goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusMonth, updateCusSearch,
+  goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch,
   submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment,
   markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, showProfileModal, logout
 });

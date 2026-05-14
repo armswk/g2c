@@ -10,10 +10,6 @@ export const cusState = {
   view: 'list',
   selectedCustomerId: null,
   selectedOrderId: null,
-  month: (() => {
-    const t = new Date();
-    return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0');
-  })(),
   search: ''
 };
 
@@ -55,11 +51,6 @@ export function goToOrderDetail(orderId) {
   renderCustomers();
 }
 
-export function updateCusMonth(value) {
-  cusState.month = value;
-  renderCustomers();
-}
-
 export function updateCusSearch(value) {
   cusState.search = value || '';
   const root = document.getElementById('customer-app-root');
@@ -87,35 +78,41 @@ export function renderCustomers() {
   }
 }
 
-// ===== Stats helpers =====
-function getMonthStats(customerName) {
-  if (!cusState.month) return { total: 0, pv: 0 };
-  const [y, m] = cusState.month.split('-');
-  const targetYear = parseInt(y), targetMonth = parseInt(m) - 1;
-  let total = 0, pv = 0;
-  state.allOrders.forEach(o => {
-    if (o.customer !== customerName) return;
-    let d = new Date(o.date); if (isNaN(d.getTime())) d = new Date();
-    if (d.getMonth() === targetMonth && d.getFullYear() === targetYear) {
-      total += Number(o.totalPrice) || 0;
-      pv += Number(o.totalPV) || 0;
-    }
-  });
-  return { total, pv };
+// ===== Helpers =====
+function getCustomerOrders(customerName) {
+  const orders = state.allOrders.filter(o => o.customer === customerName);
+  orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return orders;
 }
 
-function getAllTimeStats(customerName) {
-  let total = 0, pv = 0;
-  const orders = [];
-  state.allOrders.forEach(o => {
-    if (o.customer === customerName) {
-      total += Number(o.totalPrice) || 0;
-      pv += Number(o.totalPV) || 0;
-      orders.push(o);
-    }
-  });
-  orders.sort((a, b) => new Date(b.date) - new Date(a.date));
-  return { total, pv, orders };
+function getDownlines(customerId) {
+  if (!customerId) return [];
+  return state.allCustomers.filter(c => c.upline === customerId);
+}
+
+// BFS through the downline tree starting at rootId.
+// Returns an array of generations: [gen1Customers, gen2Customers, ...].
+// visited guards against accidental cycles (data shouldn't allow them, but be safe).
+function getNetworkByGeneration(rootId) {
+  if (!rootId) return [];
+  const generations = [];
+  const visited = new Set([rootId]);
+  let current = state.allCustomers.filter(c => c.upline === rootId);
+  while (current.length > 0) {
+    current.forEach(c => visited.add(c.id));
+    generations.push(current);
+    const next = [];
+    current.forEach(parent => {
+      state.allCustomers.forEach(c => {
+        if (c.upline === parent.id && !visited.has(c.id)) {
+          visited.add(c.id);
+          next.push(c);
+        }
+      });
+    });
+    current = next;
+  }
+  return generations;
 }
 
 function statusBadge(status) {
@@ -132,7 +129,6 @@ function escapeHtml(s) {
 
 // ===== Page: Customer LIST =====
 function getCustomerListHTML() {
-  const monthVal = escapeHtml(cusState.month);
   const searchVal = escapeHtml(cusState.search);
 
   return `
@@ -162,14 +158,39 @@ function getCustomerListHTML() {
             oninput="updateCusSearch(this.value)"
             class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500" />
         </div>
-        <input type="month" id="cusMonth" value="${monthVal}"
-          onchange="updateCusMonth(this.value)"
-          class="px-2 py-2 text-sm border border-gray-300 rounded-md font-semibold text-gray-700" />
       </div>
 
       <!-- List area -->
-      <div id="cus-list-area" class="flex-1 overflow-y-auto p-3 space-y-2">
+      <div id="cus-list-area" class="flex-1 overflow-y-auto p-3">
         ${getCustomerCardsHTML()}
+      </div>
+    </div>
+  `;
+}
+
+function renderCustomerCard(c) {
+  const primary = (c.nickname && c.nickname.trim()) ? c.nickname : (c.name || '');
+  const initial = primary ? primary.charAt(0).toUpperCase() : '?';
+  const { phone } = parseCustomerData(c);
+  const downlineCount = getDownlines(c.id).length;
+  const safeId = escapeHtml(c.id);
+  const safePrimary = escapeHtml(primary);
+  const safeFullName = escapeHtml(c.name || '');
+  const showFullName = c.nickname && c.nickname.trim() && c.name && c.nickname.trim() !== c.name;
+  const safePhone = escapeHtml(phone || '');
+
+  return `
+    <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 hover:border-emerald-400 hover:shadow-md transition cursor-pointer"
+         onclick="goToCustomerDetail('${safeId}')">
+      <div class="flex items-center gap-3">
+        <div class="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xl font-bold shrink-0">${escapeHtml(initial)}</div>
+        <div class="flex-1 min-w-0">
+          <div class="font-bold text-emerald-900 text-base truncate">${safePrimary}${statusBadge(c.status)}</div>
+          ${showFullName ? `<div class="text-xs text-gray-500 truncate">${safeFullName}</div>` : ''}
+          ${safePhone ? `<div class="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><i class="ph-fill ph-phone text-emerald-600"></i> ${safePhone}</div>` : ''}
+          ${downlineCount > 0 ? `<div class="text-xs text-emerald-700 flex items-center gap-1 mt-0.5 font-semibold"><i class="ph-fill ph-share-network"></i> มีลูกทีม ${downlineCount} คน</div>` : ''}
+        </div>
+        <i class="ph-bold ph-caret-right text-gray-400 text-lg"></i>
       </div>
     </div>
   `;
@@ -193,42 +214,30 @@ function getCustomerCardsHTML() {
     return `<div class="p-10 text-center text-gray-400 text-base">ไม่พบลูกค้าที่ตรงกับการค้นหา</div>`;
   }
 
-  return filtered.map(c => {
-    const s = getMonthStats(c.name);
-    const primary = (c.nickname && c.nickname.trim()) ? c.nickname : (c.name || '');
-    const initial = primary ? primary.charAt(0).toUpperCase() : '?';
-    const { phone } = parseCustomerData(c);
-    const safeId = escapeHtml(c.id);
-    const safePrimary = escapeHtml(primary);
-    const safeFullName = escapeHtml(c.name || '');
-    const showFullName = c.nickname && c.nickname.trim() && c.name && c.nickname.trim() !== c.name;
-    const safePhone = escapeHtml(phone || '');
+  const frontlines = filtered.filter(c => !c.upline);
+  const downlines  = filtered.filter(c =>  c.upline);
 
-    return `
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 hover:border-emerald-400 hover:shadow-md transition cursor-pointer"
-           onclick="goToCustomerDetail('${safeId}')">
-        <div class="flex items-center gap-3">
-          <div class="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xl font-bold shrink-0">${escapeHtml(initial)}</div>
-          <div class="flex-1 min-w-0">
-            <div class="font-bold text-emerald-900 text-base truncate">${safePrimary}${statusBadge(c.status)}</div>
-            ${showFullName ? `<div class="text-xs text-gray-500 truncate">${safeFullName}</div>` : ''}
-            ${safePhone ? `<div class="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><i class="ph-fill ph-phone text-emerald-600"></i> ${safePhone}</div>` : ''}
-          </div>
-          <i class="ph-bold ph-caret-right text-gray-400 text-lg"></i>
-        </div>
-        <div class="mt-3 grid grid-cols-2 gap-2 pt-3 border-t border-gray-100">
-          <div class="bg-emerald-50 rounded-md p-2 text-center">
-            <div class="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">ยอดซื้อ (เดือน)</div>
-            <div class="text-base font-bold text-emerald-700">€${s.total.toFixed(2)}</div>
-          </div>
-          <div class="bg-amber-50 rounded-md p-2 text-center">
-            <div class="text-[10px] uppercase tracking-wide text-amber-700 font-semibold">PV</div>
-            <div class="text-base font-bold text-amber-700">${s.pv.toFixed(2)}</div>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join('');
+  const frontSection = frontlines.length === 0 ? '' : `
+    <h3 class="font-black text-lg text-emerald-800 mb-3 mt-2 flex items-center gap-2">
+      <i class="ph-fill ph-star"></i> Frontline (ไม่มีผู้แนะนำ)
+      <span class="text-xs bg-emerald-100 text-emerald-700 px-2 py-1 rounded-full">${frontlines.length}</span>
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      ${frontlines.map(renderCustomerCard).join('')}
+    </div>
+  `;
+
+  const downSection = downlines.length === 0 ? '' : `
+    <h3 class="font-black text-lg text-blue-800 mb-3 mt-8 flex items-center gap-2">
+      <i class="ph-fill ph-users-three"></i> Downline (มีผู้แนะนำ)
+      <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">${downlines.length}</span>
+    </h3>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      ${downlines.map(renderCustomerCard).join('')}
+    </div>
+  `;
+
+  return frontSection + downSection;
 }
 
 // ===== Page: Customer DETAIL =====
@@ -245,7 +254,10 @@ function getCustomerDetailHTML() {
   }
 
   const { phone, socials } = parseCustomerData(c);
-  const { total, pv, orders } = getAllTimeStats(c.name);
+  const orders = getCustomerOrders(c.name);
+  const generations = getNetworkByGeneration(c.id);
+  const totalNetwork = generations.reduce((s, g) => s + g.length, 0);
+  const upline = c.upline ? state.allCustomers.find(x => x.id === c.upline) : null;
   const primary = (c.nickname && c.nickname.trim()) ? c.nickname : (c.name || '');
   const initial = primary ? primary.charAt(0).toUpperCase() : '?';
   const safeId = escapeHtml(c.id);
@@ -300,6 +312,56 @@ function getCustomerDetailHTML() {
           </div>`;
       }).join('');
 
+  let uplineHtml = '';
+  if (upline) {
+    const upPrimary = (upline.nickname && upline.nickname.trim()) ? upline.nickname : (upline.name || '');
+    uplineHtml = `
+      <button onclick="goToCustomerDetail('${escapeHtml(upline.id)}')"
+              class="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition">
+        <i class="ph-fill ph-arrow-bend-left-up"></i>
+        ผู้แนะนำ: ${escapeHtml(upPrimary)}
+      </button>
+    `;
+  }
+
+  // Per-generation color cycle. CDN Tailwind interprets these at runtime so
+  // dynamic class names from template literals are picked up.
+  const genColors = ['emerald', 'blue', 'amber', 'purple', 'rose', 'teal'];
+
+  const networkHtml = generations.length === 0
+    ? `<div class="p-6 text-center text-gray-400 text-sm">ยังไม่มีลูกทีมในเครือข่าย</div>`
+    : generations.map((gen, idx) => {
+        const level = idx + 1;
+        const color = genColors[idx % genColors.length];
+        const indent = Math.min(idx * 12, 36);
+        const cardsHtml = gen.map(dl => {
+          const dlPrimary = (dl.nickname && dl.nickname.trim()) ? dl.nickname : (dl.name || '');
+          const dlInitial = dlPrimary ? dlPrimary.charAt(0).toUpperCase() : '?';
+          const dlChildCount = getDownlines(dl.id).length;
+          const dlShowFullName = dl.nickname && dl.nickname.trim() && dl.name && dl.nickname.trim() !== dl.name;
+          const safeDlId = escapeHtml(dl.id);
+          return `
+            <div class="bg-white rounded-lg border border-gray-200 border-l-4 border-l-${color}-500 p-3 flex items-center gap-3 cursor-pointer hover:border-${color}-400 hover:shadow-sm transition"
+                 onclick="goToCustomerDetail('${safeDlId}')">
+              <div class="w-10 h-10 rounded-full bg-${color}-600 text-white flex items-center justify-center font-bold shrink-0">${escapeHtml(dlInitial)}</div>
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-semibold text-emerald-900 truncate">${escapeHtml(dlPrimary)}${statusBadge(dl.status)}</div>
+                ${dlShowFullName ? `<div class="text-xs text-gray-500 truncate">${escapeHtml(dl.name)}</div>` : ''}
+                <div class="text-xs text-gray-500 mt-0.5"><i class="ph-fill ph-share-network text-${color}-600"></i> มีลูกทีม ${dlChildCount} คน</div>
+              </div>
+              <i class="ph-bold ph-caret-right text-gray-400"></i>
+            </div>`;
+        }).join('');
+        return `
+          <div style="margin-left: ${indent}px;" class="space-y-2">
+            <div class="px-1 py-1 text-xs font-bold uppercase tracking-wide text-${color}-700 flex items-center gap-2">
+              <span class="inline-flex items-center justify-center w-5 h-5 rounded-full bg-${color}-100 text-${color}-700 text-[11px]">${level}</span>
+              ชั้นที่ ${level} • Gen ${level} (${gen.length} คน)
+            </div>
+            ${cardsHtml}
+          </div>`;
+      }).join('<div class="h-2"></div>');
+
   return `
     <div class="flex flex-col h-full">
       <!-- Header -->
@@ -326,6 +388,7 @@ function getCustomerDetailHTML() {
             <div class="flex-1 min-w-0">
               <div class="text-lg font-bold text-emerald-900">${safePrimary}${statusBadge(c.status)}</div>
               ${showFullName ? `<div class="text-sm text-gray-500 mt-0.5">${safeFullName}</div>` : ''}
+              ${uplineHtml}
               ${phone ? `<div class="flex items-center gap-2 text-sm text-gray-600 mt-1"><i class="ph-fill ph-phone text-emerald-600"></i> ${escapeHtml(phone)}</div>` : ''}
               ${dobLine}
             </div>
@@ -336,15 +399,14 @@ function getCustomerDetailHTML() {
           ${c.mapUrl ? `<a href="${escapeHtml(c.mapUrl)}" target="_blank" class="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"><i class="ph-fill ph-map-pin-line"></i> นำทางแผนที่</a>` : ''}
         </div>
 
-        <!-- Summary -->
-        <div class="grid grid-cols-2 gap-2">
-          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 text-center">
-            <div class="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">ยอดซื้อสะสม</div>
-            <div class="text-xl font-bold text-emerald-700 mt-1">€${total.toFixed(2)}</div>
+        <!-- Downline Network -->
+        <div>
+          <div class="px-1 py-2 text-sm font-bold text-emerald-900 flex items-center justify-between gap-2">
+            <span class="flex items-center gap-2"><i class="ph-fill ph-share-network"></i> เครือข่ายดาวน์ไลน์ (My Network)</span>
+            <span class="text-xs font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">รวม ${totalNetwork} คน • ${generations.length} ชั้น</span>
           </div>
-          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 text-center">
-            <div class="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">PV สะสม</div>
-            <div class="text-xl font-bold text-amber-600 mt-1">${pv.toFixed(2)}</div>
+          <div class="space-y-2">
+            ${networkHtml}
           </div>
         </div>
 
@@ -449,7 +511,7 @@ export function addSwalSocialRow(type = 'Line', val = '') {
 }
 
 export function showCustomerModal(id = null) {
-  let cNickname = '', cName = '', cPhone = '', cRemark = '', cMap = '', cDob = '', cAddress = '', cSocials = [], cStatus = 'Member', modalTitle = 'เพิ่มลูกค้าใหม่', icon = 'ph-user-plus';
+  let cNickname = '', cName = '', cPhone = '', cRemark = '', cMap = '', cDob = '', cAddress = '', cSocials = [], cStatus = 'Member', cUpline = '', modalTitle = 'เพิ่มลูกค้าใหม่', icon = 'ph-user-plus';
   if (id) {
     const c = state.allCustomers.find(x => x.id === id);
     if (c) {
@@ -458,9 +520,20 @@ export function showCustomerModal(id = null) {
        cRemark = c.remark || ''; cMap = c.mapUrl || '';
        cDob = c.dob ? new Date(c.dob).toISOString().split('T')[0] : '';
        cAddress = c.address || ''; cStatus = c.status || 'Member';
+       cUpline = c.upline || '';
        modalTitle = 'แก้ไขข้อมูลลูกค้า'; icon = 'ph-pencil-simple';
     }
   }
+
+  const uplineOptions = state.allCustomers
+    .filter(x => x.id !== id)
+    .map(x => {
+      const primary = (x.nickname && x.nickname.trim()) ? x.nickname : (x.name || '');
+      const suffix = x.nickname && x.nickname.trim() && x.name && x.nickname.trim() !== x.name ? ` — ${x.name}` : '';
+      const label = escapeHtml(`${primary}${suffix}`);
+      const selected = x.id === cUpline ? 'selected' : '';
+      return `<option value="${escapeHtml(x.id)}" ${selected}>${label}</option>`;
+    }).join('');
   Swal.fire({
     title: `<div style="font-family: 'Sarabun', sans-serif; color: var(--primary-dk); font-weight: 700; font-size: 1.4rem;"><i class="ph-fill ${icon}" style="font-size: 2.5rem; color: var(--primary-lt); display: block; margin-bottom: 10px;"></i>${modalTitle}</div>`,
     html: `
@@ -476,7 +549,7 @@ export function showCustomerModal(id = null) {
         <div style="margin-bottom: 15px;"><label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; padding-top: 15px; border-top: 1px solid var(--border);">ช่องทางติดต่ออื่นๆ (Social)<span onclick="addSwalSocialRow()" style="color: var(--primary); font-size: 0.8rem; cursor: pointer; font-weight: 700; background: #E8F5E9; padding: 4px 10px; border-radius: 12px;">+ เพิ่มช่องทาง</span></label><div id="swal-socials-container"></div></div>
         <div style="margin-bottom: 15px;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ที่อยู่จัดส่ง</label><textarea id="swal-cus-address" class="c-input" placeholder="ระบุที่อยู่..." rows="2" style="margin:0; resize: vertical;">${cAddress}</textarea></div>
         <div style="margin-bottom: 15px;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">หมายเหตุ / ข้อมูลเพิ่มเติม</label><textarea id="swal-cus-remark" class="c-input" placeholder="เช่น ลูกค้า VIP..." rows="2" style="margin:0; resize: vertical;">${cRemark}</textarea></div>
-        <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
             <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ลิงก์ Google Maps</label><input type="url" id="swal-cus-map" class="c-input" placeholder="วางลิงก์แผนที่ร้านที่นี่..." value="${cMap}" style="margin:0;"></div>
             <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">สถานะลูกค้า</label>
                 <select id="swal-cus-status" class="c-select" style="margin:0;">
@@ -486,6 +559,15 @@ export function showCustomerModal(id = null) {
                 </select>
             </div>
         </div>
+        <div style="margin-bottom: 10px;">
+            <label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">
+                <i class="ph-fill ph-share-network" style="color: var(--primary);"></i> ผู้แนะนำ (Upline / Sponsor)
+            </label>
+            <select id="swal-cus-upline" class="c-select" style="margin:0;">
+                <option value="">— ไม่มีผู้แนะนำ —</option>
+                ${uplineOptions}
+            </select>
+        </div>
       </div>`,
     didOpen: () => { if(cSocials.length > 0) { cSocials.forEach(s => addSwalSocialRow(s.type, s.value)); } else { addSwalSocialRow(); } },
     focusConfirm: false, showCancelButton: true, confirmButtonText: 'บันทึกข้อมูล', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#2D6A4F',
@@ -494,12 +576,13 @@ export function showCustomerModal(id = null) {
       const name = document.getElementById('swal-cus-name').value.trim(); const phone = document.getElementById('swal-cus-phone').value.trim(); const remark = document.getElementById('swal-cus-remark').value.trim(); const mapUrl = document.getElementById('swal-cus-map').value.trim();
       const dob = document.getElementById('swal-cus-dob').value; const address = document.getElementById('swal-cus-address').value.trim();
       const status = document.getElementById('swal-cus-status').value;
+      const upline = document.getElementById('swal-cus-upline').value;
       const socialRows = document.querySelectorAll('.social-row'); const socials = [];
       socialRows.forEach(row => { const type = row.querySelector('.social-type').value; const val = row.querySelector('.social-val').value.trim(); if(val) socials.push({ type, value: val }); });
       if (!nickname) { Swal.showValidationMessage('⚠️ กรุณากรอกชื่อเล่น (Nickname)'); return false; }
       // Fall back to nickname when full name is left blank, so order linkage (which uses `name`) always has a value.
       const finalName = name || nickname;
-      return { nickname, name: finalName, channel: socials, phone, remark, mapUrl, dob: dob ? new Date(dob).toISOString() : null, address, status };
+      return { nickname, name: finalName, channel: socials, phone, remark, mapUrl, dob: dob ? new Date(dob).toISOString() : null, address, status, upline: upline || null };
     }
   }).then((result) => { if (result.isConfirmed) saveCustomer(result.value, id); });
 }
