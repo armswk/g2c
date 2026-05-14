@@ -300,20 +300,7 @@
 
         <!-- View 3: Customers -->
         <div id="view-cus" class="view-container">
-          <div class="dash-layout">
-            <div style="display:flex; justify-content:space-between; margin-bottom: 25px; align-items:center; flex-wrap: wrap; gap: 15px;">
-              <h2 style="color:var(--primary-dk); font-size:1.5rem; font-weight: 700; margin: 0;"><i class="ph-fill ph-users"></i> ทะเบียนลูกค้า</h2>
-              <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
-                <button class="btn-checkout" style="width:auto; margin:0; padding:10px 15px; border-radius:8px; font-size: 0.9rem; background: var(--bg); color: var(--primary); border: 1px solid var(--primary);" onclick="copyCustomerLink()">
-                  <i class="ph ph-link"></i> คัดลอกลิงก์ให้ลูกค้ากรอก
-                </button>
-                <input type="month" id="cusMonth" class="c-input" style="width:auto; margin:0; font-weight: 600;" onchange="renderCustomers()">
-                <button class="btn-checkout" style="width:auto; margin:0; padding:10px 20px; border-radius:8px; font-size: 0.95rem;" onclick="showCustomerModal()">
-                  + เพิ่มลูกค้าใหม่
-                </button>
-              </div>
-            </div>
-            <div class="customer-grid" id="customerList"></div>
+          <div id="customer-app-root" class="h-full w-full bg-gray-50 relative shadow-sm overflow-hidden flex flex-col font-sans">
           </div>
         </div>
 

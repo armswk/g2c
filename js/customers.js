@@ -4,65 +4,443 @@ import { pb } from './api.js';
 import { parseCustomerData } from './utils.js';
 import { updateDashboard, renderInstallments } from './orders.js';
 
+// UI navigation state for the Customers view.
+// view: 'list' | 'detail' | 'order'
+export const cusState = {
+  view: 'list',
+  selectedCustomerId: null,
+  selectedOrderId: null,
+  month: (() => {
+    const t = new Date();
+    return t.getFullYear() + '-' + String(t.getMonth() + 1).padStart(2, '0');
+  })(),
+  search: ''
+};
+
 export function populateSelects() {
   const cSel = document.getElementById('customerSelect'); const dSel = document.getElementById('dashCustomerSelect');
   if(!cSel || !dSel) return;
   cSel.innerHTML = '<option value="">-- เลือกลูกค้าที่มีอยู่ --</option>'; dSel.innerHTML = '<option value="ALL">ลูกค้าทั้งหมด</option>';
   state.allCustomers.forEach(c => {
-    const parsed = parseCustomerData(c); const displayName = parsed.phone ? `${c.name} (${parsed.phone})` : c.name;
+    const parsed = parseCustomerData(c);
+    const primary = (c.nickname && c.nickname.trim()) ? c.nickname : c.name;
+    const suffix = c.nickname && c.nickname.trim() && c.name ? ` — ${c.name}` : '';
+    const displayName = parsed.phone ? `${primary}${suffix} (${parsed.phone})` : `${primary}${suffix}`;
+    // value stays as c.name so existing orders (linked by customerName=c.name) keep working.
     cSel.innerHTML += `<option value="${c.name}">${displayName}</option>`; dSel.innerHTML += `<option value="${c.name}">${displayName}</option>`;
   });
 }
 
+// ===== Navigation helpers =====
+export function goToCustomerDetail(id) {
+  cusState.view = 'detail';
+  cusState.selectedCustomerId = id;
+  renderCustomers();
+}
+
+export function goBackCustomer() {
+  if (cusState.view === 'order') {
+    cusState.view = 'detail';
+    cusState.selectedOrderId = null;
+  } else if (cusState.view === 'detail') {
+    cusState.view = 'list';
+    cusState.selectedCustomerId = null;
+  }
+  renderCustomers();
+}
+
+export function goToOrderDetail(orderId) {
+  cusState.view = 'order';
+  cusState.selectedOrderId = orderId;
+  renderCustomers();
+}
+
+export function updateCusMonth(value) {
+  cusState.month = value;
+  renderCustomers();
+}
+
+export function updateCusSearch(value) {
+  cusState.search = value || '';
+  const root = document.getElementById('customer-app-root');
+  if (!root) return;
+  // Only re-render the list area to preserve input focus.
+  const listArea = root.querySelector('#cus-list-area');
+  if (listArea && cusState.view === 'list') {
+    listArea.innerHTML = getCustomerCardsHTML();
+  } else {
+    renderCustomers();
+  }
+}
+
+// ===== Main render entry =====
 export function renderCustomers() {
-  const monthVal = document.getElementById('cusMonth').value;
-  if (!monthVal) return;
-  const [filterY, filterM] = monthVal.split('-'); const targetYear = parseInt(filterY), targetMonth = parseInt(filterM) - 1;
-  const stats = {}; state.allCustomers.forEach(c => { stats[c.name] = { total: 0, pv: 0 }; });
+  const root = document.getElementById('customer-app-root');
+  if (!root) return;
+
+  if (cusState.view === 'detail') {
+    root.innerHTML = getCustomerDetailHTML();
+  } else if (cusState.view === 'order') {
+    root.innerHTML = getOrderDetailHTML();
+  } else {
+    root.innerHTML = getCustomerListHTML();
+  }
+}
+
+// ===== Stats helpers =====
+function getMonthStats(customerName) {
+  if (!cusState.month) return { total: 0, pv: 0 };
+  const [y, m] = cusState.month.split('-');
+  const targetYear = parseInt(y), targetMonth = parseInt(m) - 1;
+  let total = 0, pv = 0;
   state.allOrders.forEach(o => {
-    let safeDateObj = new Date(o.date); if(isNaN(safeDateObj.getTime())) safeDateObj = new Date();
-    if(safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear) {
-      if(stats[o.customer]) { stats[o.customer].total += Number(o.totalPrice) || 0; stats[o.customer].pv += Number(o.totalPV) || 0; }
+    if (o.customer !== customerName) return;
+    let d = new Date(o.date); if (isNaN(d.getTime())) d = new Date();
+    if (d.getMonth() === targetMonth && d.getFullYear() === targetYear) {
+      total += Number(o.totalPrice) || 0;
+      pv += Number(o.totalPV) || 0;
     }
   });
-  const list = document.getElementById('customerList'); if (!list) return;
-  if (state.allCustomers.length === 0) { list.innerHTML = '<div style="grid-column:1/-1; padding:40px;text-align:center;color:#999;font-size:1.1rem;">ยังไม่มีข้อมูลลูกค้าในระบบ</div>'; return; }
+  return { total, pv };
+}
 
-  list.innerHTML = state.allCustomers.map(c => {
-    const s = stats[c.name] || { total: 0, pv: 0 }; const initial = c.name ? c.name.charAt(0).toUpperCase() : '?';
-    const { socials, phone } = parseCustomerData(c);
-    const socialHtml = socials.map(soc => {
-       let icon = 'ph-link', color = '#6B7280';
-       if(soc.type === 'Line') { icon = 'ph-chat-circle-text'; color = '#00B900'; }
-       if(soc.type === 'Facebook') { icon = 'ph-facebook-logo'; color = '#1877F2'; }
-       if(soc.type === 'Whatsapp') { icon = 'ph-whatsapp-logo'; color = '#25D366'; }
-       if(soc.type === 'Instagram') { icon = 'ph-instagram-logo'; color = '#E4405F'; }
-       let isLink = soc.value.startsWith('http') || soc.value.includes('.com') || soc.value.includes('.me') || soc.value.includes('fb.com') || soc.value.includes('ig.me');
-       let href = soc.value.startsWith('http') ? soc.value : 'https://' + soc.value;
-       return isLink ? `<a href="${href}" target="_blank" style="display:inline-flex; align-items:center; gap:4px; margin-right:12px; margin-bottom:8px; font-size:0.8rem; color:${color}; text-decoration:none; font-weight:600; background: ${color}15; padding: 4px 10px; border-radius: 12px;"><i class="ph-fill ${icon}"></i> ${soc.value.length > 25 ? 'ดูโปรไฟล์' : soc.value}</a>` : `<div style="display:inline-flex; align-items:center; gap:4px; margin-right:12px; margin-bottom:8px; font-size:0.85rem; color:var(--text-muted);"><i class="ph-fill ${icon}" style="color:${color};"></i> ${soc.value}</div>`;
-    }).join('');
-    const phoneHtml = phone ? `<div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px; display:flex; align-items:center; gap:6px;"><i class="ph-fill ph-phone" style="color:var(--primary); font-size:1.1rem;"></i> ${phone}</div>` : '';
-    const remarkHtml = c.remark ? `<div style="font-size:0.85rem; color:#92400E; margin-top:8px; padding: 8px 12px; background: #FEF3C7; border-radius: 6px;"><i class="ph-fill ph-note-pencil"></i> ${c.remark}</div>` : '';
-    const mapHtml = c.mapUrl ? `<a href="${c.mapUrl}" target="_blank" style="display:inline-flex; align-items:center; gap:6px; margin-top:8px; margin-right:8px; font-size:0.85rem; color:#fff; background:var(--primary-lt); text-decoration:none; padding:6px 12px; border-radius:6px; font-weight:600;"><i class="ph-fill ph-map-pin-line"></i> นำทางแผนที่</a>` : '';
-    let dobHtml = '';
-    if (c.dob) {
-        let d = new Date(c.dob); if (!isNaN(d.getTime())) dobHtml = `<div style="font-size:0.85rem; color:var(--text-muted); margin-bottom:6px; display:flex; align-items:center; gap:6px;"><i class="ph-fill ph-cake" style="color:#F59E0B; font-size:1.1rem;"></i> วันเกิด: ${d.toLocaleDateString('th-TH', {day:'numeric', month:'long', year:'numeric'})}</div>`;
+function getAllTimeStats(customerName) {
+  let total = 0, pv = 0;
+  const orders = [];
+  state.allOrders.forEach(o => {
+    if (o.customer === customerName) {
+      total += Number(o.totalPrice) || 0;
+      pv += Number(o.totalPV) || 0;
+      orders.push(o);
     }
-    let addressHtml = c.address ? `<div style="font-size:0.85rem; color:var(--text-muted); margin-top:8px; background:#F8FAFC; padding:8px 12px; border-radius:6px; border:1px solid var(--border); display:flex; gap:6px;"><i class="ph-fill ph-map-pin" style="color:var(--danger); flex-shrink:0;"></i> <span>${c.address}</span></div>` : '';
-    
-    let statusBadge = c.status === 'ABO' ? `<span style="background:var(--primary-lt); color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; margin-left:8px;">ABO</span>` : 
-                      c.status === 'Pending' ? `<span style="background:var(--warning); color:#fff; padding:2px 8px; border-radius:12px; font-size:0.75rem; margin-left:8px;">รอสมัคร</span>` : 
-                      `<span style="background:#E2E8F0; color:#475569; padding:2px 8px; border-radius:12px; font-size:0.75rem; margin-left:8px;">Member</span>`;
+  });
+  orders.sort((a, b) => new Date(b.date) - new Date(a.date));
+  return { total, pv, orders };
+}
+
+function statusBadge(status) {
+  if (status === 'ABO') return `<span class="ml-2 inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-green-600 text-white">ABO</span>`;
+  if (status === 'Pending') return `<span class="ml-2 inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-500 text-white">รอสมัคร</span>`;
+  return `<span class="ml-2 inline-block px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-200 text-slate-700">Member</span>`;
+}
+
+function escapeHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ===== Page: Customer LIST =====
+function getCustomerListHTML() {
+  const monthVal = escapeHtml(cusState.month);
+  const searchVal = escapeHtml(cusState.search);
+
+  return `
+    <div class="flex flex-col h-full">
+      <!-- Header -->
+      <div class="px-4 py-3 bg-white border-b border-gray-200 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2">
+          <i class="ph-fill ph-users text-2xl text-emerald-700"></i>
+          <h2 class="text-lg font-bold text-emerald-900">ทะเบียนลูกค้า</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="copyCustomerLink()" class="px-3 py-1.5 text-xs font-semibold rounded-md border border-emerald-600 text-emerald-700 bg-white hover:bg-emerald-50 flex items-center gap-1">
+            <i class="ph ph-link"></i> ลิงก์ลูกค้า
+          </button>
+          <button onclick="showCustomerModal()" class="px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1">
+            <i class="ph-bold ph-plus"></i> เพิ่มลูกค้า
+          </button>
+        </div>
+      </div>
+
+      <!-- Filters -->
+      <div class="px-4 py-3 bg-white border-b border-gray-200 flex items-center gap-2 shrink-0">
+        <div class="relative flex-1">
+          <i class="ph ph-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"></i>
+          <input type="text" id="cus-search-input" placeholder="ค้นหาชื่อลูกค้า / เบอร์โทร..."
+            value="${searchVal}"
+            oninput="updateCusSearch(this.value)"
+            class="w-full pl-9 pr-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500" />
+        </div>
+        <input type="month" id="cusMonth" value="${monthVal}"
+          onchange="updateCusMonth(this.value)"
+          class="px-2 py-2 text-sm border border-gray-300 rounded-md font-semibold text-gray-700" />
+      </div>
+
+      <!-- List area -->
+      <div id="cus-list-area" class="flex-1 overflow-y-auto p-3 space-y-2">
+        ${getCustomerCardsHTML()}
+      </div>
+    </div>
+  `;
+}
+
+function getCustomerCardsHTML() {
+  if (!state.allCustomers || state.allCustomers.length === 0) {
+    return `<div class="p-10 text-center text-gray-400 text-base">ยังไม่มีข้อมูลลูกค้าในระบบ</div>`;
+  }
+
+  const q = (cusState.search || '').trim().toLowerCase();
+  const filtered = state.allCustomers.filter(c => {
+    if (!q) return true;
+    const { phone } = parseCustomerData(c);
+    return (c.name || '').toLowerCase().includes(q)
+      || (c.nickname || '').toLowerCase().includes(q)
+      || (phone || '').toLowerCase().includes(q);
+  });
+
+  if (filtered.length === 0) {
+    return `<div class="p-10 text-center text-gray-400 text-base">ไม่พบลูกค้าที่ตรงกับการค้นหา</div>`;
+  }
+
+  return filtered.map(c => {
+    const s = getMonthStats(c.name);
+    const primary = (c.nickname && c.nickname.trim()) ? c.nickname : (c.name || '');
+    const initial = primary ? primary.charAt(0).toUpperCase() : '?';
+    const { phone } = parseCustomerData(c);
+    const safeId = escapeHtml(c.id);
+    const safePrimary = escapeHtml(primary);
+    const safeFullName = escapeHtml(c.name || '');
+    const showFullName = c.nickname && c.nickname.trim() && c.name && c.nickname.trim() !== c.name;
+    const safePhone = escapeHtml(phone || '');
 
     return `
-      <div class="customer-card" style="padding: 20px;">
-        <div style="display: flex; align-items: flex-start; gap: 15px; margin-bottom: 15px;"><div style="width: 50px; height: 50px; border-radius: 50%; background: var(--primary-lt); color: #fff; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 700; flex-shrink: 0;">${initial}</div><div style="flex:1; overflow:hidden;"><div style="font-weight:700; font-size:1.15rem; color:var(--primary-dk); margin-bottom: 6px;">${c.name} ${statusBadge}</div>${phoneHtml}${dobHtml}<div style="display:flex; flex-wrap:wrap; margin-top:4px;">${socialHtml}</div>${addressHtml}${remarkHtml}${mapHtml}</div></div>
-        <div style="background: #F8FAFC; padding: 15px; border-radius: 8px; margin-bottom: 15px; border: 1px solid var(--border);"><div style="display:flex; justify-content:space-between; margin-bottom:8px; align-items: center;"><span style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">ยอดซื้อเดือนที่เลือก</span><span style="font-size:1.2rem; font-weight:700; color:var(--primary);">€${s.total.toFixed(2)}</span></div><div style="display:flex; justify-content:space-between; align-items: center;"><span style="font-size:0.85rem; color:var(--text-muted); font-weight:600;">PV รวม</span><span style="font-size:1rem; font-weight:700; color:var(--accent);">${s.pv.toFixed(2)} PV</span></div></div>
-        <div style="display: flex; justify-content: flex-end; gap: 20px; border-top: 1px solid var(--border); padding-top: 15px;"><span style="font-size:0.85rem; color:var(--primary-lt); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="showCustomerModal('${c.id}')"><i class="ph ph-pencil-simple"></i> แก้ไข</span><span style="font-size:0.85rem; color:var(--danger); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="delCustomer('${c.id}')"><i class="ph ph-trash"></i> ลบ</span></div>
-      </div>`;
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 hover:border-emerald-400 hover:shadow-md transition cursor-pointer"
+           onclick="goToCustomerDetail('${safeId}')">
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xl font-bold shrink-0">${escapeHtml(initial)}</div>
+          <div class="flex-1 min-w-0">
+            <div class="font-bold text-emerald-900 text-base truncate">${safePrimary}${statusBadge(c.status)}</div>
+            ${showFullName ? `<div class="text-xs text-gray-500 truncate">${safeFullName}</div>` : ''}
+            ${safePhone ? `<div class="text-xs text-gray-500 flex items-center gap-1 mt-0.5"><i class="ph-fill ph-phone text-emerald-600"></i> ${safePhone}</div>` : ''}
+          </div>
+          <i class="ph-bold ph-caret-right text-gray-400 text-lg"></i>
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-2 pt-3 border-t border-gray-100">
+          <div class="bg-emerald-50 rounded-md p-2 text-center">
+            <div class="text-[10px] uppercase tracking-wide text-emerald-700 font-semibold">ยอดซื้อ (เดือน)</div>
+            <div class="text-base font-bold text-emerald-700">€${s.total.toFixed(2)}</div>
+          </div>
+          <div class="bg-amber-50 rounded-md p-2 text-center">
+            <div class="text-[10px] uppercase tracking-wide text-amber-700 font-semibold">PV</div>
+            <div class="text-base font-bold text-amber-700">${s.pv.toFixed(2)}</div>
+          </div>
+        </div>
+      </div>
+    `;
   }).join('');
 }
 
+// ===== Page: Customer DETAIL =====
+function getCustomerDetailHTML() {
+  const c = state.allCustomers.find(x => x.id === cusState.selectedCustomerId);
+  if (!c) {
+    return `
+      <div class="flex flex-col h-full">
+        <div class="px-4 py-3 bg-white border-b border-gray-200 flex items-center gap-2">
+          <button onclick="goBackCustomer()" class="p-1 rounded hover:bg-gray-100"><i class="ph-bold ph-arrow-left text-xl"></i></button>
+          <h2 class="text-lg font-bold text-emerald-900">ไม่พบข้อมูลลูกค้า</h2>
+        </div>
+      </div>`;
+  }
+
+  const { phone, socials } = parseCustomerData(c);
+  const { total, pv, orders } = getAllTimeStats(c.name);
+  const primary = (c.nickname && c.nickname.trim()) ? c.nickname : (c.name || '');
+  const initial = primary ? primary.charAt(0).toUpperCase() : '?';
+  const safeId = escapeHtml(c.id);
+  const safePrimary = escapeHtml(primary);
+  const safeFullName = escapeHtml(c.name || '');
+  const showFullName = c.nickname && c.nickname.trim() && c.name && c.nickname.trim() !== c.name;
+
+  const socialChipsHtml = (socials || []).map(soc => {
+    let icon = 'ph-link', color = 'text-gray-600 bg-gray-100';
+    if (soc.type === 'Line') { icon = 'ph-chat-circle-text'; color = 'text-green-700 bg-green-100'; }
+    if (soc.type === 'Facebook') { icon = 'ph-facebook-logo'; color = 'text-blue-700 bg-blue-100'; }
+    if (soc.type === 'Whatsapp') { icon = 'ph-whatsapp-logo'; color = 'text-green-700 bg-green-100'; }
+    if (soc.type === 'Instagram') { icon = 'ph-instagram-logo'; color = 'text-pink-700 bg-pink-100'; }
+    const isLink = soc.value.startsWith('http') || soc.value.includes('.com') || soc.value.includes('.me');
+    const href = soc.value.startsWith('http') ? soc.value : 'https://' + soc.value;
+    const label = soc.value.length > 25 ? 'ดูโปรไฟล์' : escapeHtml(soc.value);
+    return isLink
+      ? `<a href="${escapeHtml(href)}" target="_blank" class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${color}"><i class="ph-fill ${icon}"></i> ${label}</a>`
+      : `<span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold ${color}"><i class="ph-fill ${icon}"></i> ${label}</span>`;
+  }).join('');
+
+  let dobLine = '';
+  if (c.dob) {
+    const d = new Date(c.dob);
+    if (!isNaN(d.getTime())) {
+      dobLine = `<div class="flex items-center gap-2 text-sm text-gray-600"><i class="ph-fill ph-cake text-amber-500"></i> ${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</div>`;
+    }
+  }
+
+  const ordersHtml = orders.length === 0
+    ? `<div class="p-6 text-center text-gray-400 text-sm">ยังไม่มีรายการสั่งซื้อ</div>`
+    : orders.map(o => {
+        const d = new Date(o.date);
+        const dateStr = isNaN(d.getTime()) ? '-' : d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
+        const itemCount = (o.items || []).reduce((s, i) => s + (Number(i.qty) || 0), 0);
+        const safeOid = escapeHtml(o.id);
+        return `
+          <div class="bg-white rounded-lg border border-gray-200 p-3 flex items-center gap-3 cursor-pointer hover:border-emerald-400 hover:shadow-sm transition"
+               onclick="goToOrderDetail('${safeOid}')">
+            <div class="w-10 h-10 rounded-md bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0">
+              <i class="ph-fill ph-receipt text-xl"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-semibold text-gray-800">${escapeHtml(dateStr)}</div>
+              <div class="text-xs text-gray-500">${itemCount} รายการ · ${(Number(o.totalPV) || 0).toFixed(2)} PV</div>
+            </div>
+            <div class="text-right">
+              <div class="text-base font-bold text-emerald-700">€${(Number(o.totalPrice) || 0).toFixed(2)}</div>
+              <div class="text-[11px] text-gray-400">${escapeHtml(o.paymentStatus || '')}</div>
+            </div>
+            <i class="ph-bold ph-caret-right text-gray-400"></i>
+          </div>`;
+      }).join('');
+
+  return `
+    <div class="flex flex-col h-full">
+      <!-- Header -->
+      <div class="px-4 py-3 bg-white border-b border-gray-200 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2">
+          <button onclick="goBackCustomer()" class="p-1 rounded hover:bg-gray-100"><i class="ph-bold ph-arrow-left text-xl"></i></button>
+          <h2 class="text-lg font-bold text-emerald-900">รายละเอียดลูกค้า</h2>
+        </div>
+        <div class="flex items-center gap-1">
+          <button onclick="showCustomerModal('${safeId}')" class="p-2 rounded hover:bg-gray-100 text-emerald-700" title="แก้ไข">
+            <i class="ph ph-pencil-simple text-lg"></i>
+          </button>
+          <button onclick="delCustomer('${safeId}')" class="p-2 rounded hover:bg-gray-100 text-red-600" title="ลบ">
+            <i class="ph ph-trash text-lg"></i>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-3 space-y-3">
+        <!-- Profile card -->
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div class="flex items-center gap-3">
+            <div class="w-16 h-16 rounded-full bg-emerald-600 text-white flex items-center justify-center text-2xl font-bold">${escapeHtml(initial)}</div>
+            <div class="flex-1 min-w-0">
+              <div class="text-lg font-bold text-emerald-900">${safePrimary}${statusBadge(c.status)}</div>
+              ${showFullName ? `<div class="text-sm text-gray-500 mt-0.5">${safeFullName}</div>` : ''}
+              ${phone ? `<div class="flex items-center gap-2 text-sm text-gray-600 mt-1"><i class="ph-fill ph-phone text-emerald-600"></i> ${escapeHtml(phone)}</div>` : ''}
+              ${dobLine}
+            </div>
+          </div>
+          ${socialChipsHtml ? `<div class="mt-3 flex flex-wrap gap-2">${socialChipsHtml}</div>` : ''}
+          ${c.address ? `<div class="mt-3 text-sm text-gray-600 bg-slate-50 border border-slate-200 rounded-md p-2 flex gap-2"><i class="ph-fill ph-map-pin text-red-500 shrink-0"></i><span>${escapeHtml(c.address)}</span></div>` : ''}
+          ${c.remark ? `<div class="mt-2 text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2 flex gap-2"><i class="ph-fill ph-note-pencil shrink-0"></i><span>${escapeHtml(c.remark)}</span></div>` : ''}
+          ${c.mapUrl ? `<a href="${escapeHtml(c.mapUrl)}" target="_blank" class="mt-3 inline-flex items-center gap-2 px-3 py-2 rounded-md bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"><i class="ph-fill ph-map-pin-line"></i> นำทางแผนที่</a>` : ''}
+        </div>
+
+        <!-- Summary -->
+        <div class="grid grid-cols-2 gap-2">
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 text-center">
+            <div class="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">ยอดซื้อสะสม</div>
+            <div class="text-xl font-bold text-emerald-700 mt-1">€${total.toFixed(2)}</div>
+          </div>
+          <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-3 text-center">
+            <div class="text-[11px] uppercase tracking-wide text-gray-500 font-semibold">PV สะสม</div>
+            <div class="text-xl font-bold text-amber-600 mt-1">${pv.toFixed(2)}</div>
+          </div>
+        </div>
+
+        <!-- Orders -->
+        <div>
+          <div class="px-1 py-2 text-sm font-bold text-emerald-900 flex items-center gap-2">
+            <i class="ph-fill ph-clock-counter-clockwise"></i> ประวัติการสั่งซื้อ (${orders.length})
+          </div>
+          <div class="space-y-2">
+            ${ordersHtml}
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ===== Page: Order DETAIL =====
+function getOrderDetailHTML() {
+  const o = state.allOrders.find(x => x.id === cusState.selectedOrderId);
+  if (!o) {
+    return `
+      <div class="flex flex-col h-full">
+        <div class="px-4 py-3 bg-white border-b border-gray-200 flex items-center gap-2">
+          <button onclick="goBackCustomer()" class="p-1 rounded hover:bg-gray-100"><i class="ph-bold ph-arrow-left text-xl"></i></button>
+          <h2 class="text-lg font-bold text-emerald-900">ไม่พบรายการ</h2>
+        </div>
+      </div>`;
+  }
+
+  const d = new Date(o.date);
+  const dateStr = isNaN(d.getTime()) ? '-' : d.toLocaleDateString('th-TH', { day: '2-digit', month: 'long', year: 'numeric' });
+  const items = o.items || [];
+  const itemsHtml = items.length === 0
+    ? `<div class="p-4 text-center text-gray-400 text-sm">ไม่มีรายการสินค้า</div>`
+    : items.map(i => `
+        <div class="flex items-center justify-between py-2 border-b border-gray-100 last:border-b-0">
+          <div class="flex-1 min-w-0">
+            <div class="text-sm font-semibold text-gray-800 truncate">${escapeHtml(i.name)}</div>
+            <div class="text-xs text-gray-500">€${(Number(i.price) || 0).toFixed(2)} × ${Number(i.qty) || 0}</div>
+          </div>
+          <div class="text-sm font-bold text-emerald-700 ml-2">€${((Number(i.price) || 0) * (Number(i.qty) || 0)).toFixed(2)}</div>
+        </div>
+      `).join('');
+
+  const safeOid = escapeHtml(o.id);
+
+  return `
+    <div class="flex flex-col h-full">
+      <div class="px-4 py-3 bg-white border-b border-gray-200 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2">
+          <button onclick="goBackCustomer()" class="p-1 rounded hover:bg-gray-100"><i class="ph-bold ph-arrow-left text-xl"></i></button>
+          <h2 class="text-lg font-bold text-emerald-900">รายละเอียดออเดอร์</h2>
+        </div>
+        <button onclick="printReceipt('${safeOid}')" class="p-2 rounded hover:bg-gray-100 text-emerald-700" title="พิมพ์">
+          <i class="ph ph-printer text-lg"></i>
+        </button>
+      </div>
+
+      <div class="flex-1 overflow-y-auto p-3 space-y-3">
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">ลูกค้า</div>
+              <div class="text-base font-bold text-emerald-900">${escapeHtml(o.customer || '')}</div>
+            </div>
+            <div class="text-right">
+              <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">วันที่</div>
+              <div class="text-sm font-semibold text-gray-700">${escapeHtml(dateStr)}</div>
+            </div>
+          </div>
+          ${o.paymentStatus ? `<div class="mt-3 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700"><i class="ph-fill ph-credit-card"></i> ${escapeHtml(o.paymentStatus)}</div>` : ''}
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
+          <div class="text-sm font-bold text-emerald-900 mb-2 flex items-center gap-1"><i class="ph-fill ph-shopping-bag"></i> รายการสินค้า</div>
+          ${itemsHtml}
+        </div>
+
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 p-4 space-y-2">
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-600">ยอดรวมสุทธิ</span>
+            <span class="text-xl font-bold text-emerald-700">€${(Number(o.totalPrice) || 0).toFixed(2)}</span>
+          </div>
+          <div class="flex items-center justify-between text-sm">
+            <span class="text-gray-600">PV รวม</span>
+            <span class="text-base font-bold text-amber-600">${(Number(o.totalPV) || 0).toFixed(2)} PV</span>
+          </div>
+          ${Number(o.ar_balance) > 0 ? `<div class="flex items-center justify-between text-sm text-blue-700 bg-blue-50 border border-blue-200 rounded-md p-2"><span><i class="ph-fill ph-bank"></i> AR Balance</span><span class="font-bold">-€${Number(o.ar_balance).toFixed(2)}</span></div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// ===== Modal helpers (DB logic preserved verbatim from original) =====
 export function addSwalSocialRow(type = 'Line', val = '') {
   const container = document.getElementById('swal-socials-container');
   const div = document.createElement('div'); div.className = 'social-row'; div.style.display = 'flex'; div.style.gap = '8px'; div.style.marginBottom = '10px';
@@ -71,22 +449,26 @@ export function addSwalSocialRow(type = 'Line', val = '') {
 }
 
 export function showCustomerModal(id = null) {
-  let cName = '', cPhone = '', cRemark = '', cMap = '', cDob = '', cAddress = '', cSocials = [], cStatus = 'Member', modalTitle = 'เพิ่มลูกค้าใหม่', icon = 'ph-user-plus';
+  let cNickname = '', cName = '', cPhone = '', cRemark = '', cMap = '', cDob = '', cAddress = '', cSocials = [], cStatus = 'Member', modalTitle = 'เพิ่มลูกค้าใหม่', icon = 'ph-user-plus';
   if (id) {
     const c = state.allCustomers.find(x => x.id === id);
-    if (c) { 
-       cName = c.name; const parsed = parseCustomerData(c); cPhone = parsed.phone; cSocials = parsed.socials; 
-       cRemark = c.remark || ''; cMap = c.mapUrl || ''; 
+    if (c) {
+       cNickname = c.nickname || '';
+       cName = c.name; const parsed = parseCustomerData(c); cPhone = parsed.phone; cSocials = parsed.socials;
+       cRemark = c.remark || ''; cMap = c.mapUrl || '';
        cDob = c.dob ? new Date(c.dob).toISOString().split('T')[0] : '';
        cAddress = c.address || ''; cStatus = c.status || 'Member';
-       modalTitle = 'แก้ไขข้อมูลลูกค้า'; icon = 'ph-pencil-simple'; 
+       modalTitle = 'แก้ไขข้อมูลลูกค้า'; icon = 'ph-pencil-simple';
     }
   }
   Swal.fire({
     title: `<div style="font-family: 'Sarabun', sans-serif; color: var(--primary-dk); font-weight: 700; font-size: 1.4rem;"><i class="ph-fill ${icon}" style="font-size: 2.5rem; color: var(--primary-lt); display: block; margin-bottom: 10px;"></i>${modalTitle}</div>`,
     html: `
       <div style="text-align: left; padding-top: 15px; font-family: 'Sarabun', sans-serif;">
-        <div style="margin-bottom: 15px;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ชื่อ-นามสกุล <span style="color: var(--danger);">*</span></label><input type="text" id="swal-cus-name" class="c-input" placeholder="เช่น คุณสมชาย ใจดี" value="${cName}" style="margin:0;"></div>
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+           <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ชื่อเล่น (Nickname) <span style="color: var(--danger);">*</span></label><input type="text" id="swal-cus-nickname" class="c-input" placeholder="เช่น สมชาย" value="${cNickname}" style="margin:0;"></div>
+           <div style="flex: 1.5;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ชื่อ-นามสกุล (Full Name)</label><input type="text" id="swal-cus-name" class="c-input" placeholder="เช่น คุณสมชาย ใจดี" value="${cName}" style="margin:0;"></div>
+        </div>
         <div style="display: flex; gap: 10px; margin-bottom: 15px;">
            <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">เบอร์โทรศัพท์</label><input type="tel" id="swal-cus-phone" class="c-input" placeholder="081XXXXXXX" value="${cPhone}" style="margin:0;"></div>
            <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">วันเดือนปีเกิด</label><input type="date" id="swal-cus-dob" class="c-input" value="${cDob}" style="margin:0;"></div>
@@ -108,13 +490,16 @@ export function showCustomerModal(id = null) {
     didOpen: () => { if(cSocials.length > 0) { cSocials.forEach(s => addSwalSocialRow(s.type, s.value)); } else { addSwalSocialRow(); } },
     focusConfirm: false, showCancelButton: true, confirmButtonText: 'บันทึกข้อมูล', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#2D6A4F',
     preConfirm: () => {
+      const nickname = document.getElementById('swal-cus-nickname').value.trim();
       const name = document.getElementById('swal-cus-name').value.trim(); const phone = document.getElementById('swal-cus-phone').value.trim(); const remark = document.getElementById('swal-cus-remark').value.trim(); const mapUrl = document.getElementById('swal-cus-map').value.trim();
       const dob = document.getElementById('swal-cus-dob').value; const address = document.getElementById('swal-cus-address').value.trim();
       const status = document.getElementById('swal-cus-status').value;
       const socialRows = document.querySelectorAll('.social-row'); const socials = [];
       socialRows.forEach(row => { const type = row.querySelector('.social-type').value; const val = row.querySelector('.social-val').value.trim(); if(val) socials.push({ type, value: val }); });
-      if (!name) { Swal.showValidationMessage('⚠️ กรุณากรอกชื่อลูกค้า'); return false; }
-      return { name, channel: socials, phone, remark, mapUrl, dob: dob ? new Date(dob).toISOString() : null, address, status };
+      if (!nickname) { Swal.showValidationMessage('⚠️ กรุณากรอกชื่อเล่น (Nickname)'); return false; }
+      // Fall back to nickname when full name is left blank, so order linkage (which uses `name`) always has a value.
+      const finalName = name || nickname;
+      return { nickname, name: finalName, channel: socials, phone, remark, mapUrl, dob: dob ? new Date(dob).toISOString() : null, address, status };
     }
   }).then((result) => { if (result.isConfirmed) saveCustomer(result.value, id); });
 }
@@ -141,9 +526,14 @@ export function delCustomer(id) {
       try {
         await pb.collection('customers').delete(id);
         Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบสำเร็จ' });
+        // If we were viewing the deleted customer, go back to list.
+        if (cusState.selectedCustomerId === id) {
+          cusState.view = 'list';
+          cusState.selectedCustomerId = null;
+          cusState.selectedOrderId = null;
+          renderCustomers();
+        }
       } catch(e) { Swal.fire('Error', e.message, 'error'); }
     }
   });
 }
-
-
