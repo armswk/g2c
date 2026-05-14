@@ -59,7 +59,7 @@ function setupRealtime() {
     } else if (e.action === 'delete') {
       state.allCustomers = state.allCustomers.filter(c => c.id !== e.record.id);
     }
-    populateSelects(); renderCustomers();
+    populateSelects(); renderCustomers(); updateDashboard(); renderInstallments();
   });
 
   pb.collection('products').subscribe('*', function (e) {

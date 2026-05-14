@@ -2,7 +2,14 @@
 import { state } from './state.js';
 import { pb } from './api.js';
 import { parseCustomerData } from './utils.js';
-import { updateDashboard, renderInstallments } from './orders.js';
+import { updateDashboard, renderInstallments, getOrderCustomerName } from './orders.js';
+
+const TOM_SELECT_OPTS = {
+  searchField: ['text'],
+  allowEmptyOption: true,
+  maxOptions: 500,
+  placeholder: 'ค้นหาลูกค้า...'
+};
 
 // UI navigation state for the Customers view.
 // view: 'list' | 'detail' | 'order'
@@ -14,17 +21,50 @@ export const cusState = {
 };
 
 export function populateSelects() {
-  const cSel = document.getElementById('customerSelect'); const dSel = document.getElementById('dashCustomerSelect');
-  if(!cSel || !dSel) return;
-  cSel.innerHTML = '<option value="">-- เลือกลูกค้าที่มีอยู่ --</option>'; dSel.innerHTML = '<option value="ALL">ลูกค้าทั้งหมด</option>';
+  const cSel = document.getElementById('customerSelect');
+  const dSel = document.getElementById('dashCustomerSelect');
+  if (!cSel || !dSel) return;
+
+  // Preserve the user's current pick so a re-populate (e.g. after adding a
+  // customer) doesn't blow away an in-progress order or dashboard filter.
+  const prevCusValue = cSel.tomselect ? cSel.tomselect.getValue() : cSel.value;
+  const prevDashValue = dSel.tomselect ? dSel.tomselect.getValue() : dSel.value;
+
+  // TomSelect mutates the DOM around the native <select>; tear it down before
+  // we touch innerHTML so the next init starts from a clean element.
+  if (cSel.tomselect) cSel.tomselect.destroy();
+  if (dSel.tomselect) dSel.tomselect.destroy();
+
+  cSel.innerHTML = '<option value="">-- เลือกลูกค้าที่มีอยู่ --</option>';
+  dSel.innerHTML = '<option value="ALL">ลูกค้าทั้งหมด</option>';
+
   state.allCustomers.forEach(c => {
-    const parsed = parseCustomerData(c);
-    const primary = (c.nickname && c.nickname.trim()) ? c.nickname : c.name;
-    const suffix = c.nickname && c.nickname.trim() && c.name ? ` — ${c.name}` : '';
-    const displayName = parsed.phone ? `${primary}${suffix} (${parsed.phone})` : `${primary}${suffix}`;
-    // value stays as c.name so existing orders (linked by customerName=c.name) keep working.
-    cSel.innerHTML += `<option value="${c.name}">${displayName}</option>`; dSel.innerHTML += `<option value="${c.name}">${displayName}</option>`;
+    // Strict nickname-first; no phone, no full-name suffix.
+    const displayName = escapeHtml((c.nickname && c.nickname.trim()) || c.name || '');
+    const safeId = escapeHtml(c.id);
+    cSel.innerHTML += `<option value="${safeId}">${displayName}</option>`;
+    dSel.innerHTML += `<option value="${safeId}">${displayName}</option>`;
   });
+
+  if (typeof TomSelect !== 'undefined') {
+    new TomSelect(cSel, TOM_SELECT_OPTS);
+    new TomSelect(dSel, TOM_SELECT_OPTS);
+    if (prevCusValue) cSel.tomselect.setValue(prevCusValue, true);
+    if (prevDashValue) dSel.tomselect.setValue(prevDashValue, true);
+  }
+}
+
+// Safe value writer for the POS customer select — works whether TomSelect has
+// initialized yet or not. Use this from any code path that wants to programmatically
+// change the selection (editOrder, resetForm, etc).
+export function setCustomerSelectValue(value) {
+  const el = document.getElementById('customerSelect');
+  if (!el) return;
+  if (el.tomselect) {
+    el.tomselect.setValue(value || '', true);
+  } else {
+    el.value = value || '';
+  }
 }
 
 // ===== Navigation helpers =====
@@ -79,8 +119,14 @@ export function renderCustomers() {
 }
 
 // ===== Helpers =====
-function getCustomerOrders(customerName) {
-  const orders = state.allOrders.filter(o => o.customer === customerName);
+// Match orders by ID OR by legacy string name. The OR (not else-if) lets a
+// pre-customerId order still surface for its customer until/unless that
+// customer is renamed; new orders match strictly via customerId.
+function getCustomerOrders(customer) {
+  if (!customer) return [];
+  const orders = state.allOrders.filter(o =>
+    o.customerId === customer.id || o.customer === customer.name
+  );
   orders.sort((a, b) => new Date(b.date) - new Date(a.date));
   return orders;
 }
@@ -254,7 +300,7 @@ function getCustomerDetailHTML() {
   }
 
   const { phone, socials } = parseCustomerData(c);
-  const orders = getCustomerOrders(c.name);
+  const orders = getCustomerOrders(c);
   const generations = getNetworkByGeneration(c.id);
   const totalNetwork = generations.reduce((s, g) => s + g.length, 0);
   const upline = c.upline ? state.allCustomers.find(x => x.id === c.upline) : null;
@@ -471,7 +517,7 @@ function getOrderDetailHTML() {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">ลูกค้า</div>
-              <div class="text-base font-bold text-emerald-900">${escapeHtml(o.customer || '')}</div>
+              <div class="text-base font-bold text-emerald-900">${escapeHtml(getOrderCustomerName(o))}</div>
             </div>
             <div class="text-right">
               <div class="text-xs uppercase tracking-wide text-gray-500 font-semibold">วันที่</div>

@@ -2,13 +2,45 @@ import { state } from './state.js';
 import { pb } from './api.js';
 import { clearCart, updateCart } from './pos.js';
 import { closeAllPanels, togglePaymentOptions } from './ui.js';
-import { renderCustomers } from './customers.js';
+import { renderCustomers, setCustomerSelectValue } from './customers.js';
 
 function getPaidMonths(o) {
   let hist = o.instHistory || [];
   if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
   if (!Array.isArray(hist)) hist = [];
   return hist.filter(h => h.method && h.method !== 'รอดำเนินการ').length;
+}
+
+// Resolve an order's customer through the live customers list. Orders saved
+// before customerId was introduced fall back to the legacy string match so
+// historical data keeps rendering.
+export function getOrderCustomerId(order) {
+  if (!order) return null;
+  if (order.customerId) return order.customerId;
+  const legacyName = order.customer || order.customerName;
+  if (!legacyName) return null;
+  const match = state.allCustomers.find(c => c.name === legacyName);
+  return match ? match.id : null;
+}
+
+export function getOrderCustomerName(order) {
+  if (!order) return '';
+  const displayFor = c => ((c.nickname || '').trim()) || c.name || '';
+  // Primary: persistent ID lookup — survives renames.
+  if (order.customerId) {
+    const byId = state.allCustomers.find(x => x.id === order.customerId);
+    if (byId) return displayFor(byId);
+  }
+  // Legacy fallback: try to resolve by the stored name so renames still
+  // propagate when the order pre-dates the customerId migration, *as long
+  // as that customer hasn't been renamed yet* (after a rename, only orders
+  // with customerId can follow — that's why customerId must be persisted).
+  const legacy = order.customer || order.customerName || '';
+  if (legacy) {
+    const byName = state.allCustomers.find(x => x.name === legacy);
+    if (byName) return displayFor(byName);
+  }
+  return legacy;
 }
 
 export function updateInstallmentCalc() {
@@ -27,8 +59,11 @@ export function updateInstallmentCalc() {
 }
 
 export async function submitOrder() {
-  const customerName = document.getElementById('customerSelect').value;
-  if(!customerName) return Swal.fire({icon:'warning', title:'กรุณาเลือกลูกค้า'});
+  const customerId = document.getElementById('customerSelect').value;
+  if(!customerId) return Swal.fire({icon:'warning', title:'กรุณาเลือกลูกค้า'});
+  const customerRecord = state.allCustomers.find(c => c.id === customerId);
+  if(!customerRecord) return Swal.fire({icon:'warning', title:'ไม่พบข้อมูลลูกค้า'});
+  const customerName = customerRecord.name || customerRecord.nickname || '';
   const orderDate = document.getElementById('orderDate').value;
   if(!orderDate) return Swal.fire({icon:'warning', title:'กรุณาเลือกวันที่'});
   if(state.cart.length === 0) return Swal.fire({icon:'warning', title:'ตะกร้าว่างเปล่า'});
@@ -69,6 +104,7 @@ export async function submitOrder() {
 
   const payload = {
     orderNumber: state.currentEditId ? undefined : 'OR-' + Date.now(),
+    customerId: customerId,
     customerName: customerName,
     orderDate: new Date(orderDate).toISOString(),
     remark: document.getElementById('orderRemark').value,
@@ -113,7 +149,7 @@ export function resetForm() {
   clearCart(); 
   document.getElementById('orderDate').valueAsDate = new Date();
   document.getElementById('orderRemark').value = ''; 
-  document.getElementById('customerSelect').value = ''; 
+  setCustomerSelectValue('');
   if(document.getElementById('orderRef')) document.getElementById('orderRef').value = ''; 
   if(document.getElementById('paymentStatus')) document.getElementById('paymentStatus').value = 'ยังไม่จ่าย';
   if(document.getElementById('discountInput')) document.getElementById('discountInput').value = '';
@@ -129,12 +165,15 @@ export function updateDashboard() {
   const monthVal = document.getElementById('dashMonth').value;
   if (!monthVal) return;
   const [filterY, filterM] = monthVal.split('-');
-  const targetYear = parseInt(filterY), targetMonth = parseInt(filterM) - 1; 
+  const targetYear = parseInt(filterY), targetMonth = parseInt(filterM) - 1;
+  const cus = document.getElementById('dashCustomerSelect')?.value || 'ALL';
 
   let sumEuro = 0, sumPV = 0;
   state.allOrders.forEach(o => {
     let safeDateObj = new Date(o.date); if(isNaN(safeDateObj.getTime())) safeDateObj = new Date();
-    if(safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear) { sumEuro += Number(o.totalPrice) || 0; sumPV += Number(o.totalPV) || 0; }
+    const matchDate = safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear;
+    const matchCus = cus === 'ALL' || o.customerId === cus;
+    if (matchDate && matchCus) { sumEuro += Number(o.totalPrice) || 0; sumPV += Number(o.totalPV) || 0; }
   });
   document.getElementById('dashSales').innerText = `€${sumEuro.toFixed(2)}`;
   document.getElementById('dashPV').innerText = sumPV.toFixed(2);
@@ -154,7 +193,7 @@ export function loadHistory() {
   let filtered = state.allOrders.filter(o => {
     let safeDateObj = new Date(o.date); if(isNaN(safeDateObj.getTime())) safeDateObj = new Date();
     let matchDate = (safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear);
-    let matchCus = (cus === 'ALL' || o.customer === cus);
+    let matchCus = (cus === 'ALL' || o.customerId === cus);
     let matchPay = (payStatus === 'ALL' || o.paymentStatus === payStatus);
     let safeRef = String(o.orderRef || '').trim();
     let matchRef = true;
@@ -195,7 +234,7 @@ export function loadHistory() {
         <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 12px;">
           <div>
             <div style="font-weight:700; color:var(--primary-dk); font-size:1.05rem; margin-bottom:4px;"><i class="ph-fill ph-receipt"></i> ${displayId} ${statusBadge}</div>
-            <div style="font-size:0.85rem; color:var(--text-muted);">👤 ${g.customer} &nbsp;|&nbsp; 📅 ${dStr}</div>
+            <div style="font-size:0.85rem; color:var(--text-muted);">👤 ${getOrderCustomerName(g)} &nbsp;|&nbsp; 📅 ${dStr}</div>
             ${refHtml}
           </div>
           <div style="text-align:right;">
@@ -284,7 +323,7 @@ export function printReceipt(orderId) {
       <div class="text-center" style="font-size: 14px; margin-bottom: 15px;">ใบเสร็จรับเงิน</div>
       <div style="font-size: 12px; margin-bottom: 5px;"><span class="font-bold">รหัส:</span> ${displayId}</div>
       <div style="font-size: 12px; margin-bottom: 5px;"><span class="font-bold">วันที่:</span> ${dateStr}</div>
-      <div style="font-size: 12px; margin-bottom: 5px;"><span class="font-bold">ลูกค้า:</span> ${group.customer}</div>
+      <div style="font-size: 12px; margin-bottom: 5px;"><span class="font-bold">ลูกค้า:</span> ${getOrderCustomerName(group)}</div>
       ${remarkHtml}
       <hr><div style="margin-bottom: 10px; font-weight: 600; font-size: 13px;">รายการสินค้า</div>${itemsHtml}<hr>
       ${(Number(group.discount) > 0 || Number(group.ar_balance) > 0) ? `<div class="flex-between" style="font-size: 14px; margin-top: 5px; color: #333;"><span>ยอดรวมสินค้า</span><span>€${(Number(group.totalPrice) + Number(group.discount||0) + Number(group.ar_balance||0)).toFixed(2)}</span></div>` : ''}
@@ -311,7 +350,7 @@ export function editOrder(id) {
       state.currentEditId = id;
       state.cart = (order.items || []).map(i => ({ ...i, brand: state.allProducts.find(p=>p.name===i.name)?.brand||"ทั่วไป", isSet: false }));
       
-      document.getElementById('customerSelect').value = order.customer;
+      setCustomerSelectValue(getOrderCustomerId(order) || '');
       let safeDateObj = new Date(order.date); if (isNaN(safeDateObj.getTime())) safeDateObj = new Date();
       document.getElementById('orderDate').value = safeDateObj.toISOString().split('T')[0];
       document.getElementById('orderRemark').value = order.remark || '';
@@ -327,7 +366,7 @@ export function editOrder(id) {
       if(document.getElementById('instTerms')) document.getElementById('instTerms').value = order.instTerms || '';
 
       document.getElementById('editModeBanner').style.display = 'flex';
-      document.getElementById('editModeText').innerText = `กำลังแก้ไขรหัส: ${id}`;
+      document.getElementById('editModeText').innerText = `กำลังแก้ไขรหัส: ${order.orderRef || order.orderNumber || order.id}`;
       
       updateCart();
       updateInstallmentCalc();
@@ -395,7 +434,7 @@ export function renderInstallments() {
      return `
       <div style="padding: 20px; border-bottom: 1px solid var(--border);">
         <div class="flex flex-wrap items-start gap-2 mb-2">
-          <span style="font-weight:700; color:var(--primary-dk); font-size:1.1rem; line-height:1.4;">👤 ${o.customer}</span>
+          <span style="font-weight:700; color:var(--primary-dk); font-size:1.1rem; line-height:1.4;">👤 ${getOrderCustomerName(o)}</span>
           ${typeBadge}
         </div>
         <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px; display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
@@ -600,7 +639,7 @@ export function showInstallmentHistory(orderId) {
   Swal.fire({
     title: 'ประวัติการชำระเงิน',
     html: `
-      <div style="font-size:0.82rem; color:#64748B; margin-bottom:10px; text-align:left;">บิล: <strong>${displayId}</strong> &nbsp;|&nbsp; ลูกค้า: <strong>${o.customer}</strong></div>
+      <div style="font-size:0.82rem; color:#64748B; margin-bottom:10px; text-align:left;">บิล: <strong>${displayId}</strong> &nbsp;|&nbsp; ลูกค้า: <strong>${getOrderCustomerName(o)}</strong></div>
       <div style="overflow-x:auto;">
         <table style="width:100%; font-size:0.85rem; border-collapse:collapse; text-align:left;">
           <thead><tr style="background:#F1F5F9;">
