@@ -4,6 +4,7 @@ export const state = {
     allSets: [],
     allCustomers: [],
     allOrders: [],
+    downlines: [], // users where upline === current user id (for "order owner" selection)
     cart: [],
     currentBrand: 'All',
     currentProdBrand: 'All',

@@ -694,6 +694,16 @@ export function showCustomerModal(id = null) {
   }).then((result) => { if (result.isConfirmed) saveCustomer(result.value, id); });
 }
 
+// Re-render every view that depends on the customers list. Called after a
+// save/delete so the UI updates instantly without a manual refresh (PocketBase
+// realtime is a redundant second path; both upsert by id, so it stays in sync).
+function refreshCustomerUI() {
+  populateSelects();
+  renderCustomers();
+  updateDashboard();
+  renderInstallments();
+}
+
 export async function saveCustomer(data, id) {
   try {
     // 🔥 แนบไอดีเจ้าของ (Owner) ไปด้วย ถ้าเป็นการสร้างใหม่
@@ -701,11 +711,17 @@ export async function saveCustomer(data, id) {
         data.owner = pb.authStore.model.id;
     }
 
+    let record;
     if(id) {
-        await pb.collection('customers').update(id, data);
+        record = await pb.collection('customers').update(id, data);
     } else {
-        await pb.collection('customers').create(data);
+        record = await pb.collection('customers').create(data);
     }
+    // Upsert into local state and re-render immediately.
+    const idx = state.allCustomers.findIndex(c => c.id === record.id);
+    if (idx > -1) state.allCustomers[idx] = record;
+    else state.allCustomers.unshift(record);
+    refreshCustomerUI();
     Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'บันทึกสำเร็จ' });
   } catch (e) { Swal.fire('Error', e.message, 'error'); }
 }
@@ -715,14 +731,16 @@ export function delCustomer(id) {
     if (res.isConfirmed) {
       try {
         await pb.collection('customers').delete(id);
-        Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบสำเร็จ' });
+        // Remove from local state so the UI updates instantly.
+        state.allCustomers = state.allCustomers.filter(c => c.id !== id);
         // If we were viewing the deleted customer, go back to list.
         if (cusState.selectedCustomerId === id) {
           cusState.view = 'list';
           cusState.selectedCustomerId = null;
           cusState.selectedOrderId = null;
-          renderCustomers();
         }
+        refreshCustomerUI();
+        Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบสำเร็จ' });
       } catch(e) { Swal.fire('Error', e.message, 'error'); }
     }
   });

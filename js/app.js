@@ -5,7 +5,7 @@ import { toggleSidebar, toggleCart, closeAllPanels, copyCustomerLink, togglePaym
 import { setBrand, filterProducts, renderProducts, renderSets, addToCartByIndex, addSetToCart, updateQty, clearCart, updateCart, togglePriceMode } from './pos.js';
 import { setProdBrand, filterManageProducts, renderProductManage, renderSetsManage, showProductModal, saveProduct, delProduct, showSetModal, toggleSetItemQty, filterSetItems, calcSetTotal, saveProductSet, delProductSet } from './products.js';
 import { populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer, cusState, goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch, setCusOwnerView } from './customers.js';
-import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, setOrdersOwnerView } from './orders.js';
+import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, setOrdersOwnerView, populateOrderOwnerSelect } from './orders.js';
 import { checkAuth, loginWithEmail, loginWithOAuth2Redirect, handleOAuth2Callback, logout, updateSidebarProfile, showProfileModal } from './auth.js';
 
 function switchView(view) {
@@ -26,7 +26,14 @@ function switchView(view) {
   if(document.querySelectorAll('.bottom-nav-item')[viewMap[view].idx]) document.querySelectorAll('.bottom-nav-item')[viewMap[view].idx].classList.add('active');
   if(document.getElementById('header-title')) document.getElementById('header-title').innerText = viewMap[view].title;
 
-  if(view === 'pos') { if(topCartIcon) topCartIcon.style.display = window.innerWidth <= 900 ? 'block' : 'none'; } 
+  if(view === 'pos') {
+    if(topCartIcon) topCartIcon.style.display = window.innerWidth <= 900 ? 'block' : 'none';
+    // Safety net: ensure the Order Owner dropdown is ready before checkout, in
+    // case it wasn't populated at init. Only re-populates when it's empty so we
+    // don't refetch downlines on every navigation.
+    const ownerSel = document.getElementById('orderOwnerSelect');
+    if (ownerSel && ownerSel.options.length === 0) populateOrderOwnerSelect();
+  }
   else { if(topCartIcon) topCartIcon.style.display = 'none'; }
 
   if (view === 'prod') filterManageProducts();
@@ -116,10 +123,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     ]);
     
     state.allProducts = pRes || []; state.allSets = sRes || [];
-    state.allCustomers = cRes || []; 
+    state.allCustomers = cRes || [];
     state.allOrders = (oRes || []).map(o => ({ ...o, date: o.orderDate, customer: o.customerName }));
 
     populateSelects(); renderProducts(); filterManageProducts(); renderCustomers(); updateDashboard(); renderInstallments();
+    // Populate the "Order Owner" dropdown (self + downlines). Self-contained and
+    // non-fatal — kept out of the critical render path above so a slow/failed
+    // users fetch never blocks the rest of the UI from rendering.
+    populateOrderOwnerSelect();
     setupRealtime();
     Swal.close();
   } catch (err) {
