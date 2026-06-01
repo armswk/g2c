@@ -4,8 +4,8 @@ import { state } from './state.js';
 import { toggleSidebar, toggleCart, closeAllPanels, copyCustomerLink, togglePaymentOptions } from './ui.js';
 import { setBrand, filterProducts, renderProducts, renderSets, addToCartByIndex, addSetToCart, updateQty, clearCart, updateCart, togglePriceMode } from './pos.js';
 import { setProdBrand, filterManageProducts, renderProductManage, renderSetsManage, showProductModal, saveProduct, delProduct, showSetModal, toggleSetItemQty, filterSetItems, calcSetTotal, saveProductSet, delProductSet } from './products.js';
-import { populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer, cusState, goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch } from './customers.js';
-import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment } from './orders.js';
+import { populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer, cusState, goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch, setCusOwnerView } from './customers.js';
+import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, setOrdersOwnerView } from './orders.js';
 import { checkAuth, loginWithEmail, loginWithOAuth2Redirect, handleOAuth2Callback, logout, updateSidebarProfile, showProfileModal } from './auth.js';
 
 function switchView(view) {
@@ -135,9 +135,10 @@ Object.assign(window, {
   setBrand, filterProducts, renderProducts, renderSets, addToCartByIndex, addSetToCart, updateQty, clearCart, updateCart, togglePriceMode,
   setProdBrand, filterManageProducts, renderProductManage, renderSetsManage, showProductModal, saveProduct, delProduct, showSetModal, toggleSetItemQty, filterSetItems, calcSetTotal, saveProductSet, delProductSet,
   populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer,
-  goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch,
+  goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch, setCusOwnerView,
   submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment,
-  markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, showProfileModal, logout
+  markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, showProfileModal, logout,
+  setOrdersOwnerView
 });
 
 

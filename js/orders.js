@@ -4,6 +4,39 @@ import { clearCart, updateCart } from './pos.js';
 import { closeAllPanels, togglePaymentOptions } from './ui.js';
 import { renderCustomers, setCustomerSelectValue } from './customers.js';
 
+// Owner-scoped view for the dashboard / order history list.
+//   'mine' → orders where owner === current user
+//   'team' → orders where owner !== current user
+// The filter applies to both KPIs and the historyList so the dashboard reads
+// consistently end-to-end.
+export const ordersViewState = { view: 'mine' };
+
+const ORDERS_TOGGLE_BASE     = 'px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1 transition';
+const ORDERS_TOGGLE_ACTIVE   = 'bg-green-700 text-white';
+const ORDERS_TOGGLE_INACTIVE = 'bg-transparent text-gray-500 hover:bg-gray-200';
+
+export function setOrdersOwnerView(view) {
+  if (view !== 'mine' && view !== 'team') return;
+  ordersViewState.view = view;
+
+  const mineBtn = document.getElementById('orders-view-mine');
+  const teamBtn = document.getElementById('orders-view-team');
+  if (mineBtn && teamBtn) {
+    mineBtn.className = `${ORDERS_TOGGLE_BASE} ${view === 'mine' ? ORDERS_TOGGLE_ACTIVE : ORDERS_TOGGLE_INACTIVE}`;
+    teamBtn.className = `${ORDERS_TOGGLE_BASE} ${view === 'team' ? ORDERS_TOGGLE_ACTIVE : ORDERS_TOGGLE_INACTIVE}`;
+  }
+  // updateDashboard recomputes KPIs and then calls loadHistory.
+  updateDashboard();
+}
+
+// Returns true if order `o` matches the current owner scope. Unauthenticated
+// fallback: pass everything through so the screen still renders.
+function matchesOwnerScope(o) {
+  const uid = pb.authStore.model ? pb.authStore.model.id : null;
+  if (!uid) return true;
+  return ordersViewState.view === 'mine' ? o.owner === uid : o.owner !== uid;
+}
+
 function getPaidMonths(o) {
   let hist = o.instHistory || [];
   if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
@@ -170,6 +203,7 @@ export function updateDashboard() {
 
   let sumEuro = 0, sumPV = 0;
   state.allOrders.forEach(o => {
+    if (!matchesOwnerScope(o)) return;
     let safeDateObj = new Date(o.date); if(isNaN(safeDateObj.getTime())) safeDateObj = new Date();
     const matchDate = safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear;
     const matchCus = cus === 'ALL' || o.customerId === cus;
@@ -191,6 +225,7 @@ export function loadHistory() {
   const targetYear = parseInt(filterY), targetMonth = parseInt(filterM) - 1; 
 
   let filtered = state.allOrders.filter(o => {
+    if (!matchesOwnerScope(o)) return false;
     let safeDateObj = new Date(o.date); if(isNaN(safeDateObj.getTime())) safeDateObj = new Date();
     let matchDate = (safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear);
     let matchCus = (cus === 'ALL' || o.customerId === cus);
