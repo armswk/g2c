@@ -12,13 +12,43 @@ const TOM_SELECT_OPTS = {
 };
 
 // UI navigation state for the Customers view.
-// view: 'list' | 'detail' | 'order'
+// view:      'list' | 'detail' | 'order'
+// ownerView: 'mine' shows records owned by the logged-in user, 'team' shows the rest
 export const cusState = {
   view: 'list',
   selectedCustomerId: null,
   selectedOrderId: null,
-  search: ''
+  search: '',
+  ownerView: 'mine'
 };
+
+// Tailwind class strings for the Mine/Team toggle. Centralized so the static
+// initial render and the dynamic re-style stay in lockstep.
+const TOGGLE_BASE_CLASS    = 'px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1 transition';
+const TOGGLE_ACTIVE_CLASS  = 'bg-green-700 text-white';
+const TOGGLE_INACTIVE_CLASS = 'bg-transparent text-gray-500 hover:bg-gray-200';
+
+export function setCusOwnerView(view) {
+  if (view !== 'mine' && view !== 'team') return;
+  cusState.ownerView = view;
+
+  // Fast path: when we're already on the list, swap button styles in place and
+  // re-render only the cards so the search input keeps focus.
+  if (cusState.view === 'list') {
+    const mineBtn = document.getElementById('cus-view-mine');
+    const teamBtn = document.getElementById('cus-view-team');
+    if (mineBtn && teamBtn) {
+      mineBtn.className = `${TOGGLE_BASE_CLASS} ${view === 'mine' ? TOGGLE_ACTIVE_CLASS : TOGGLE_INACTIVE_CLASS}`;
+      teamBtn.className = `${TOGGLE_BASE_CLASS} ${view === 'team' ? TOGGLE_ACTIVE_CLASS : TOGGLE_INACTIVE_CLASS}`;
+    }
+    const listArea = document.getElementById('cus-list-area');
+    if (listArea) {
+      listArea.innerHTML = getCustomerCardsHTML();
+      return;
+    }
+  }
+  renderCustomers();
+}
 
 export function populateSelects() {
   const cSel = document.getElementById('customerSelect');
@@ -176,6 +206,9 @@ function escapeHtml(s) {
 // ===== Page: Customer LIST =====
 function getCustomerListHTML() {
   const searchVal = escapeHtml(cusState.search);
+  const mineActive = cusState.ownerView === 'mine';
+  const mineClass = `${TOGGLE_BASE_CLASS} ${mineActive ? TOGGLE_ACTIVE_CLASS : TOGGLE_INACTIVE_CLASS}`;
+  const teamClass = `${TOGGLE_BASE_CLASS} ${mineActive ? TOGGLE_INACTIVE_CLASS : TOGGLE_ACTIVE_CLASS}`;
 
   return `
     <div class="flex flex-col h-full">
@@ -191,6 +224,18 @@ function getCustomerListHTML() {
           </button>
           <button onclick="showCustomerModal()" class="px-3 py-1.5 text-xs font-semibold rounded-md bg-emerald-600 text-white hover:bg-emerald-700 flex items-center gap-1">
             <i class="ph-bold ph-plus"></i> เพิ่มลูกค้า
+          </button>
+        </div>
+      </div>
+
+      <!-- Mine / Team toggle -->
+      <div class="px-4 py-2 bg-white border-b border-gray-200 flex items-center shrink-0">
+        <div class="inline-flex items-center gap-1 bg-gray-100 rounded-md p-1">
+          <button id="cus-view-mine" type="button" onclick="setCusOwnerView('mine')" class="${mineClass}">
+            <span>👤</span> ของฉัน (Mine)
+          </button>
+          <button id="cus-view-team" type="button" onclick="setCusOwnerView('team')" class="${teamClass}">
+            <span>👥</span> ของทีม (Team)
           </button>
         </div>
       </div>
@@ -247,8 +292,24 @@ function getCustomerCardsHTML() {
     return `<div class="p-10 text-center text-gray-400 text-base">ยังไม่มีข้อมูลลูกค้าในระบบ</div>`;
   }
 
+  // Scope by owner first ('mine' = mine, 'team' = everyone else).
+  // Skip the scope filter entirely when we have no auth user — keeps the list
+  // usable in any future unauthenticated preview without surprising blank states.
+  const currentUserId = pb.authStore.model ? pb.authStore.model.id : null;
+  const scoped = currentUserId
+    ? state.allCustomers.filter(c =>
+        cusState.ownerView === 'mine' ? c.owner === currentUserId : c.owner !== currentUserId)
+    : state.allCustomers;
+
+  if (scoped.length === 0) {
+    const msg = cusState.ownerView === 'mine'
+      ? 'ยังไม่มีลูกค้าของคุณ — ลองสลับไปดูข้อมูลของทีม'
+      : 'ยังไม่มีข้อมูลลูกค้าของทีม';
+    return `<div class="p-10 text-center text-gray-400 text-base">${msg}</div>`;
+  }
+
   const q = (cusState.search || '').trim().toLowerCase();
-  const filtered = state.allCustomers.filter(c => {
+  const filtered = scoped.filter(c => {
     if (!q) return true;
     const { phone } = parseCustomerData(c);
     return (c.name || '').toLowerCase().includes(q)
@@ -633,6 +694,16 @@ export function showCustomerModal(id = null) {
   }).then((result) => { if (result.isConfirmed) saveCustomer(result.value, id); });
 }
 
+// Re-render every view that depends on the customers list. Called after a
+// save/delete so the UI updates instantly without a manual refresh (PocketBase
+// realtime is a redundant second path; both upsert by id, so it stays in sync).
+function refreshCustomerUI() {
+  populateSelects();
+  renderCustomers();
+  updateDashboard();
+  renderInstallments();
+}
+
 export async function saveCustomer(data, id) {
   try {
     // 🔥 แนบไอดีเจ้าของ (Owner) ไปด้วย ถ้าเป็นการสร้างใหม่
@@ -640,11 +711,17 @@ export async function saveCustomer(data, id) {
         data.owner = pb.authStore.model.id;
     }
 
+    let record;
     if(id) {
-        await pb.collection('customers').update(id, data);
+        record = await pb.collection('customers').update(id, data);
     } else {
-        await pb.collection('customers').create(data);
+        record = await pb.collection('customers').create(data);
     }
+    // Upsert into local state and re-render immediately.
+    const idx = state.allCustomers.findIndex(c => c.id === record.id);
+    if (idx > -1) state.allCustomers[idx] = record;
+    else state.allCustomers.unshift(record);
+    refreshCustomerUI();
     Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'บันทึกสำเร็จ' });
   } catch (e) { Swal.fire('Error', e.message, 'error'); }
 }
@@ -654,14 +731,16 @@ export function delCustomer(id) {
     if (res.isConfirmed) {
       try {
         await pb.collection('customers').delete(id);
-        Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบสำเร็จ' });
+        // Remove from local state so the UI updates instantly.
+        state.allCustomers = state.allCustomers.filter(c => c.id !== id);
         // If we were viewing the deleted customer, go back to list.
         if (cusState.selectedCustomerId === id) {
           cusState.view = 'list';
           cusState.selectedCustomerId = null;
           cusState.selectedOrderId = null;
-          renderCustomers();
         }
+        refreshCustomerUI();
+        Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบสำเร็จ' });
       } catch(e) { Swal.fire('Error', e.message, 'error'); }
     }
   });

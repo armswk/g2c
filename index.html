@@ -207,6 +207,9 @@
                        <option value="">-- เลือกลูกค้า --</option>
                      </select>
                   </div>
+                  <!-- เจ้าของยอดสั่งซื้อ (สั่งซื้อในนามดาวไลน์) -->
+                  <label style="font-size: 0.8rem; color: var(--text-muted); display:block; margin-bottom:4px;"><i class="ph-fill ph-share-network" style="color: var(--primary);"></i> เจ้าของยอดสั่งซื้อ</label>
+                  <select id="orderOwnerSelect" class="c-input" style="margin-bottom: 8px;"></select>
                   <!-- 🔥 เปลี่ยน Placeholder -->
                   <input type="text" id="orderRef" class="c-input" placeholder="เลขอ้างอิงสั่งซื้อ (ถ้ามี)" style="margin-bottom: 8px;">
                   
@@ -349,6 +352,16 @@
             </div>
 
             <div class="history-card">
+              <div style="padding: 12px 20px; background: #F8FAFC; border-bottom: 1px solid var(--border);">
+                <div class="inline-flex items-center gap-1 bg-white border border-gray-200 rounded-md p-1">
+                  <button id="orders-view-mine" type="button" onclick="setOrdersOwnerView('mine')" class="px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1 transition bg-green-700 text-white">
+                    <span>👤</span> ของฉัน (Mine)
+                  </button>
+                  <button id="orders-view-team" type="button" onclick="setOrdersOwnerView('team')" class="px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1 transition bg-transparent text-gray-500 hover:bg-gray-200">
+                    <span>👥</span> ของทีม (Team)
+                  </button>
+                </div>
+              </div>
               <div style="padding: 15px 20px; background: #F8FAFC; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px; align-items: center;">
                 <span style="font-weight: 700; font-size: 1.1rem; color: var(--primary-dk); flex: 1;">ประวัติออเดอร์</span>
                 <select id="dashCustomerSelect" onchange="loadHistory()" class="c-input" style="width: auto; margin: 0; padding: 6px 10px;"><option value="ALL">ลูกค้าทั้งหมด</option></select>

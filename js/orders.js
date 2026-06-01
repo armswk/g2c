@@ -4,6 +4,117 @@ import { clearCart, updateCart } from './pos.js';
 import { closeAllPanels, togglePaymentOptions } from './ui.js';
 import { renderCustomers, setCustomerSelectValue } from './customers.js';
 
+// Owner-scoped view for the dashboard / order history list.
+//   'mine' → orders where owner === current user
+//   'team' → orders where owner !== current user
+// The filter applies to both KPIs and the historyList so the dashboard reads
+// consistently end-to-end.
+export const ordersViewState = { view: 'mine' };
+
+// ===== Reactivity helpers =====
+// PocketBase realtime can be unreliable behind some proxies, so every save path
+// also updates local state directly and re-renders. Both the realtime handler
+// and these helpers upsert by id, so running both is idempotent (no duplicates).
+function refreshOrderUI() {
+  updateDashboard();      // recomputes KPIs and calls loadHistory()
+  renderInstallments();
+  renderCustomers();
+}
+
+// Upsert an order record (as returned by PocketBase) into local state, mapping
+// the DB field names to the shape the rest of the app expects.
+export function syncOrderToState(record) {
+  if (!record) return;
+  const mapped = { ...record, date: record.orderDate, customer: record.customerName };
+  const idx = state.allOrders.findIndex(o => o.id === mapped.id);
+  if (idx > -1) state.allOrders[idx] = mapped;
+  else state.allOrders.unshift(mapped);
+  refreshOrderUI();
+}
+
+export function removeOrderFromState(id) {
+  state.allOrders = state.allOrders.filter(o => o.id !== id);
+  refreshOrderUI();
+}
+
+// Fill the "Order Owner" dropdown (เจ้าของยอดสั่งซื้อ) in the checkout panel.
+// Self-contained: clears existing options, adds the current user as the default
+// first option, fetches the downlines (users whose upline is the current user)
+// and appends each, then explicitly selects the current user.
+//
+// Robust by design: it builds + selects "self" synchronously *before* awaiting
+// the network, so even if the downline fetch is slow or fails the dropdown is
+// never empty and always defaults to the logged-in user.
+export async function populateOrderOwnerSelect() {
+  const sel = document.getElementById('orderOwnerSelect');
+  if (!sel) return;
+
+  const model = pb.authStore.model;
+  if (!model) { sel.innerHTML = ''; return; }
+
+  // Preserve any in-progress selection (e.g. while editing an order) so a
+  // re-populate doesn't reset the owner the user already picked.
+  const prev = sel.value;
+
+  // 1) Clear + add self as the default first option.
+  sel.innerHTML = `<option value="${model.id}">👤 ตัวเอง (${escapeHtmlAttr(model.name || 'Myself')})</option>`;
+  // 2) Default to the current user immediately.
+  sel.value = model.id;
+
+  // 3) Fetch downlines and append them. Non-fatal on error.
+  let downlines = [];
+  try {
+    downlines = await pb.collection('users').getFullList({
+      filter: `upline = "${model.id}"`
+    });
+  } catch (e) {
+    downlines = [];
+  }
+  state.downlines = downlines;
+
+  downlines.forEach(user => {
+    const label = escapeHtmlAttr((user.name && user.name.trim()) || user.email || user.id);
+    sel.insertAdjacentHTML('beforeend', `<option value="${user.id}">👥 ${label}</option>`);
+  });
+
+  // 4) Restore a valid prior selection, otherwise keep the default (self).
+  const validIds = [model.id, ...downlines.map(u => u.id)];
+  sel.value = (prev && validIds.includes(prev)) ? prev : model.id;
+}
+
+// Minimal escaping for values placed inside an option's text/attribute.
+function escapeHtmlAttr(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+const ORDERS_TOGGLE_BASE     = 'px-3 py-1.5 text-xs font-semibold rounded-md flex items-center gap-1 transition';
+const ORDERS_TOGGLE_ACTIVE   = 'bg-green-700 text-white';
+const ORDERS_TOGGLE_INACTIVE = 'bg-transparent text-gray-500 hover:bg-gray-200';
+
+export function setOrdersOwnerView(view) {
+  if (view !== 'mine' && view !== 'team') return;
+  ordersViewState.view = view;
+
+  const mineBtn = document.getElementById('orders-view-mine');
+  const teamBtn = document.getElementById('orders-view-team');
+  if (mineBtn && teamBtn) {
+    mineBtn.className = `${ORDERS_TOGGLE_BASE} ${view === 'mine' ? ORDERS_TOGGLE_ACTIVE : ORDERS_TOGGLE_INACTIVE}`;
+    teamBtn.className = `${ORDERS_TOGGLE_BASE} ${view === 'team' ? ORDERS_TOGGLE_ACTIVE : ORDERS_TOGGLE_INACTIVE}`;
+  }
+  // updateDashboard recomputes KPIs and then calls loadHistory.
+  updateDashboard();
+}
+
+// Returns true if order `o` matches the current owner scope. Unauthenticated
+// fallback: pass everything through so the screen still renders.
+function matchesOwnerScope(o) {
+  const uid = pb.authStore.model ? pb.authStore.model.id : null;
+  if (!uid) return true;
+  return ordersViewState.view === 'mine' ? o.owner === uid : o.owner !== uid;
+}
+
 function getPaidMonths(o) {
   let hist = o.instHistory || [];
   if (typeof hist === 'string') try { hist = JSON.parse(hist); } catch(e) { hist = []; }
@@ -121,17 +232,21 @@ export async function submitOrder() {
     instMonthly: instMonthly,
     instPaid: 0,
     instHistory: paymentStatus === 'ผ่อน' && document.getElementById('instType').value === 'เรา' ? [{term: 1, date: new Date(orderDate).toISOString(), method: 'รอดำเนินการ'}] : [],
-    owner: pb.authStore.model ? pb.authStore.model.id : null
+    // Order owner: the user selected in the "เจ้าของยอดสั่งซื้อ" dropdown
+    // (self by default, or a downline). Falls back to the current user.
+    owner: document.getElementById('orderOwnerSelect')?.value || (pb.authStore.model ? pb.authStore.model.id : null)
   };
 
   Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
-  
+
   try {
+    let record;
     if (state.currentEditId) {
-        await pb.collection('orders').update(state.currentEditId, payload);
+        record = await pb.collection('orders').update(state.currentEditId, payload);
     } else {
-        await pb.collection('orders').create(payload);
+        record = await pb.collection('orders').create(payload);
     }
+    syncOrderToState(record);
     Swal.fire({toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, icon:'success', title:'บันทึกออเดอร์สำเร็จ!'});
     resetForm();
   } catch(e) { Swal.fire('Error', e.message, 'error'); }
@@ -156,6 +271,9 @@ export function resetForm() {
   if(document.getElementById('arBalanceInput')) document.getElementById('arBalanceInput').value = '0';
   if(document.getElementById('instTerms')) document.getElementById('instTerms').value = '';
   const calcDisplay = document.getElementById('instCalcDisplay'); if(calcDisplay) calcDisplay.style.display = 'none';
+  // Reset order owner back to "self".
+  const ownerSel = document.getElementById('orderOwnerSelect');
+  if (ownerSel && pb.authStore.model) ownerSel.value = pb.authStore.model.id;
 
   togglePaymentOptions();
   closeAllPanels();
@@ -170,6 +288,7 @@ export function updateDashboard() {
 
   let sumEuro = 0, sumPV = 0;
   state.allOrders.forEach(o => {
+    if (!matchesOwnerScope(o)) return;
     let safeDateObj = new Date(o.date); if(isNaN(safeDateObj.getTime())) safeDateObj = new Date();
     const matchDate = safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear;
     const matchCus = cus === 'ALL' || o.customerId === cus;
@@ -191,6 +310,7 @@ export function loadHistory() {
   const targetYear = parseInt(filterY), targetMonth = parseInt(filterM) - 1; 
 
   let filtered = state.allOrders.filter(o => {
+    if (!matchesOwnerScope(o)) return false;
     let safeDateObj = new Date(o.date); if(isNaN(safeDateObj.getTime())) safeDateObj = new Date();
     let matchDate = (safeDateObj.getMonth() === targetMonth && safeDateObj.getFullYear() === targetYear);
     let matchCus = (cus === 'ALL' || o.customerId === cus);
@@ -277,7 +397,8 @@ export function markAsPaid(orderId) {
       let payload = { paymentStatus: 'จ่ายแล้ว', paymentMethod: method };
       
       try {
-         await pb.collection('orders').update(orderId, payload);
+         const record = await pb.collection('orders').update(orderId, payload);
+         syncOrderToState(record);
          Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 2000, icon: 'success', title: 'อัปเดตเป็นจ่ายแล้วสำเร็จ!' });
       } catch(e) { Swal.fire('Error', e.message, 'error'); }
     }
@@ -364,6 +485,9 @@ export function editOrder(id) {
       if(document.getElementById('discountInput')) document.getElementById('discountInput').value = order.discount || '';
       if(document.getElementById('arBalanceInput')) document.getElementById('arBalanceInput').value = order.ar_balance || '0';
       if(document.getElementById('instTerms')) document.getElementById('instTerms').value = order.instTerms || '';
+      // Restore the order's owner into the dropdown (so re-saving keeps it).
+      const ownerSel = document.getElementById('orderOwnerSelect');
+      if (ownerSel) ownerSel.value = order.owner || (pb.authStore.model ? pb.authStore.model.id : '');
 
       document.getElementById('editModeBanner').style.display = 'flex';
       document.getElementById('editModeText').innerText = `กำลังแก้ไขรหัส: ${order.orderRef || order.orderNumber || order.id}`;
@@ -381,6 +505,7 @@ export async function delOrder(id) {
     if (res.isConfirmed) {
       try {
          await pb.collection('orders').delete(id);
+         removeOrderFromState(id);
          Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบสำเร็จ' });
       } catch(e) { Swal.fire('Error', e.message, 'error'); }
     }
@@ -391,8 +516,14 @@ export function renderInstallments() {
   const list = document.getElementById('installmentList');
   if(!list) return;
   const filter = document.getElementById('instFilter').value;
-  
+
+  // The installments page shows ONLY the logged-in user's own installments —
+  // never a downline's. Skip the owner check only when unauthenticated so the
+  // screen still renders in any future preview context.
+  const uid = pb.authStore.model ? pb.authStore.model.id : null;
+
   let displayArr = state.allOrders.filter(o => {
+     if (uid && o.owner !== uid) return false;
      if (!o.instTerms || Number(o.instTerms) <= 0) return false;
      const paid = Number(o.instPaid) || 0;
      const total = Number(o.totalPrice) || 0;
@@ -503,7 +634,8 @@ export function payInstallment(orderId, nextTerm) {
          if (newInstPaid >= totalPrice) payload.paymentStatus = 'จ่ายแล้ว';
 
          try {
-            await pb.collection('orders').update(orderId, payload);
+            const record = await pb.collection('orders').update(orderId, payload);
+            syncOrderToState(record);
             Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: `บันทึกชำระ €${amount.toFixed(2)} สำเร็จ` });
          } catch(e) { Swal.fire('Error', e.message, 'error'); }
       }
@@ -553,7 +685,8 @@ export function editInstallmentAmount(orderId, histIndex) {
     else if (o.paymentStatus === 'จ่ายแล้ว') payload.paymentStatus = 'ผ่อน';
 
     try {
-      await pb.collection('orders').update(orderId, payload);
+      const record = await pb.collection('orders').update(orderId, payload);
+      syncOrderToState(record);
       Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'แก้ไขยอดสำเร็จ' });
     } catch(e) { Swal.fire('Error', e.message, 'error'); }
   });
@@ -597,7 +730,8 @@ export function deleteInstallmentPayment(orderId, histIndex) {
     else if (o.paymentStatus === 'จ่ายแล้ว') payload.paymentStatus = 'ผ่อน';
 
     try {
-      await pb.collection('orders').update(orderId, payload);
+      const record = await pb.collection('orders').update(orderId, payload);
+      syncOrderToState(record);
       Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'ลบรายการสำเร็จ' });
     } catch(e) { Swal.fire('Error', e.message, 'error'); }
   });
@@ -703,7 +837,8 @@ export function editInstallmentTerms(orderId) {
     const newMonthly = Number((remainingBalance / remainingTerms).toFixed(2));
 
     try {
-      await pb.collection('orders').update(orderId, { instTerms: newTerms, instMonthly: newMonthly });
+      const record = await pb.collection('orders').update(orderId, { instTerms: newTerms, instMonthly: newMonthly });
+      syncOrderToState(record);
       Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 1500, icon: 'success', title: 'แก้ไขจำนวนเดือนสำเร็จ' });
     } catch(e) { Swal.fire('Error', e.message, 'error'); }
   });
