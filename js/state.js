@@ -4,6 +4,7 @@ export const state = {
     allSets: [],
     allCustomers: [],
     allOrders: [],
+    amwayInvoices: [], // incoming Amway invoice PDFs (Documents view, Tab 1)
     downlines: [], // users where upline === current user id (for "order owner" selection)
     cart: [],
     currentBrand: 'All',

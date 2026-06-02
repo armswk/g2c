@@ -145,6 +145,12 @@ input, textarea {
 .kpi-val { font-size: 2.2rem; font-weight: 700; color: var(--text); }
 .history-card { background: #fff; border-radius: 12px; border: 1px solid var(--border); overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
 
+/* ─── DOCUMENTS / RECHNUNGEN TABS ─── */
+.doc-tabs { display: flex; gap: 4px; border-bottom: 2px solid var(--border); margin-bottom: 20px; flex-wrap: wrap; }
+.doc-tab { background: transparent; border: none; border-bottom: 3px solid transparent; padding: 10px 18px; margin-bottom: -2px; font-family: inherit; font-size: 0.95rem; font-weight: 600; color: var(--text-muted); cursor: pointer; transition: 0.2s; display: flex; align-items: center; gap: 6px; }
+.doc-tab:hover { color: var(--primary-dk); }
+.doc-tab.active { color: var(--primary-dk); border-bottom-color: var(--accent); }
+
 /* ─── SWEETALERT CUSTOM ─── */
 .swal-custom-popup { border-radius: 16px !important; padding: 25px 20px !important; }
 .swal-custom-title { font-family: 'Sarabun', sans-serif !important; font-size: 1.4rem !important; color: var(--primary-dk) !important; margin: 0 !important; padding: 0 0 5px 0 !important; }
