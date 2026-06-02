@@ -581,7 +581,7 @@ export async function generateRechnung(orderId, action = 'download') {
 
     doc.autoTable({
       startY: TABLE_START,
-      margin: { left: MARGIN, right: MARGIN },
+      margin: { left: MARGIN, right: MARGIN, bottom: 35 },
       head: [[
         'Pos.', 'Artikel / Leistung', 'Menge', 'Einheit',
         'MwSt.', 'Preis', 'Gesamt'
@@ -623,7 +623,13 @@ export async function generateRechnung(orderId, action = 'download') {
     const net       = isFinite(Number(order.totalPrice))  ? Number(order.totalPrice)  : subtotal;
 
     let ty = doc.lastAutoTable.finalY + 10;
-    
+
+    // Pagination: if totals block would overflow, start a new page
+    if (ty > 190) {
+      doc.addPage();
+      ty = 40;
+    }
+
     // บังคับพิกัดแกน X ให้ตรงกับ "ตัวหนังสือ" ในตารางเป๊ะๆ
     // RIGHT_X คือขอบเส้นตาราง หักลบ cellPadding 3mm 
     const TOTALS_VAL_X = RIGHT_X - 3; 
@@ -680,14 +686,10 @@ export async function generateRechnung(orderId, action = 'download') {
     );
 
     // ══════════════════════════════════════════════════════════════
-    //  6. FOOTER  (3-column layout, Y ≥ 260)
+    //  6. FOOTER  (3-column layout, fixed Y=270 on every page)
     // ══════════════════════════════════════════════════════════════
 
-    const FOOTER_Y = Math.max(260, ty + 18);
-
-    doc.setDrawColor(180, 180, 180);
-    doc.setLineWidth(0.2);
-    doc.line(MARGIN, FOOTER_Y - 4, RIGHT_X, FOOTER_Y - 4);
+    const FOOTER_Y = 270;
 
     const colW = (RIGHT_X - MARGIN) / 3;
     const COL1 = MARGIN;
@@ -703,43 +705,57 @@ export async function generateRechnung(orderId, action = 'download') {
       return y + 3.8;
     };
 
-    // ── Column 1: Company ──
-    // Issue #2: explicitly set bold for the company name, then switch back.
-    let fy = FOOTER_Y;
-    doc.setFont('Sarabun', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(110, 110, 110);
-    doc.text(T(sellerCompany), COL1, fy);
-    fy += 4.2;
-    // Switch back to normal for address lines below the company name
-    if (sellerAddr.street)  { fy = footerLine(sellerAddr.street,  COL1, fy); }
-    if (sellerAddr.plzCity) { fy = footerLine(sellerAddr.plzCity, COL1, fy); }
-    footerLine('Deutschland', COL1, fy);
+    const pageCount = doc.internal.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
 
-    // ── Column 2: Contact / Tax ──
-    fy = FOOTER_Y;
-    if (sellerDirector) {
+      // ── Footer separator line ──
+      doc.setDrawColor(180, 180, 180);
+      doc.setLineWidth(0.2);
+      doc.line(MARGIN, FOOTER_Y - 4, RIGHT_X, FOOTER_Y - 4);
+
+      // ── Column 1: Company ──
+      let fy = FOOTER_Y;
       doc.setFont('Sarabun', 'bold');
       doc.setFontSize(7.5);
       doc.setTextColor(110, 110, 110);
-      doc.text(T('Geschäftsführer: ' + sellerDirector), COL2, fy);
+      doc.text(T(sellerCompany), COL1, fy);
       fy += 4.2;
-    }
-    if (sellerPhone)    { fy = footerLine('Telefon: ' + sellerPhone, COL2, fy); }
-    if (ownerEmail)     { fy = footerLine('E-Mail: ' + ownerEmail,    COL2, fy); }
-    if (sellerTax)      { fy = footerLine('Steuernummer: ' + sellerTax, COL2, fy); }
-    if (sellerVat)      { fy = footerLine('USt.-IDNr.: ' + sellerVat,   COL2, fy); }
+      if (sellerAddr.street)  { fy = footerLine(sellerAddr.street,  COL1, fy); }
+      if (sellerAddr.plzCity) { fy = footerLine(sellerAddr.plzCity, COL1, fy); }
+      footerLine('Deutschland', COL1, fy);
 
-    // ── Column 3: Bank ──
-    fy = FOOTER_Y;
-    doc.setFont('Sarabun', 'bold');
-    doc.setFontSize(7.5);
-    doc.setTextColor(110, 110, 110);
-    doc.text(T('Bankverbindungen'), COL3, fy);
-    fy += 4.2;
-    if (sellerBank) { fy = footerLine(sellerBank,                COL3, fy); }
-    if (sellerIban) { fy = footerLine('IBAN: ' + sellerIban,      COL3, fy); }
-    if (sellerBic)  { fy = footerLine('BIC/Swift: ' + sellerBic,  COL3, fy); }
+      // ── Column 2: Contact / Tax ──
+      fy = FOOTER_Y;
+      if (sellerDirector) {
+        doc.setFont('Sarabun', 'bold');
+        doc.setFontSize(7.5);
+        doc.setTextColor(110, 110, 110);
+        doc.text(T('Geschäftsführer: ' + sellerDirector), COL2, fy);
+        fy += 4.2;
+      }
+      if (sellerPhone)    { fy = footerLine('Telefon: ' + sellerPhone, COL2, fy); }
+      if (ownerEmail)     { fy = footerLine('E-Mail: ' + ownerEmail,    COL2, fy); }
+      if (sellerTax)      { fy = footerLine('Steuernummer: ' + sellerTax, COL2, fy); }
+      if (sellerVat)      { fy = footerLine('USt.-IDNr.: ' + sellerVat,   COL2, fy); }
+
+      // ── Column 3: Bank ──
+      fy = FOOTER_Y;
+      doc.setFont('Sarabun', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(110, 110, 110);
+      doc.text(T('Bankverbindungen'), COL3, fy);
+      fy += 4.2;
+      if (sellerBank) { fy = footerLine(sellerBank,                COL3, fy); }
+      if (sellerIban) { fy = footerLine('IBAN: ' + sellerIban,      COL3, fy); }
+      if (sellerBic)  { fy = footerLine('BIC/Swift: ' + sellerBic,  COL3, fy); }
+
+      // ── Page numbers ──
+      doc.setFont('Sarabun', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(110, 110, 110);
+      doc.text('Seite ' + i + ' von ' + pageCount, RIGHT_X, 288, { align: 'right' });
+    }
 
     // ── Output ──
     if (isPreview) {
