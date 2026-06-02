@@ -7,6 +7,7 @@ import { setProdBrand, filterManageProducts, renderProductManage, renderSetsMana
 import { populateSelects, renderCustomers, addSwalSocialRow, showCustomerModal, saveCustomer, delCustomer, cusState, goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch, setCusOwnerView } from './customers.js';
 import { submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment, markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, setOrdersOwnerView, populateOrderOwnerSelect } from './orders.js';
 import { checkAuth, loginWithEmail, loginWithOAuth2Redirect, handleOAuth2Callback, logout, updateSidebarProfile, showProfileModal } from './auth.js';
+import { renderDocuments, switchDocTab, handleAmwayUpload, generateRechnung, deleteAmwayInvoice, downloadAmwayInvoice } from './documents.js';
 
 function switchView(view) {
   document.querySelectorAll('.view-container').forEach(el => el.classList.remove('active'));
@@ -18,7 +19,8 @@ function switchView(view) {
     'prod': { idx: 1, title: 'จัดการสินค้า & เซ็ต' },
     'cus': { idx: 2, title: 'ทะเบียนลูกค้า' },
     'inst': { idx: 3, title: 'ระบบผ่อนชำระ' },
-    'dash': { idx: 4, title: 'รายงาน & ประวัติ' }
+    'dash': { idx: 4, title: 'รายงาน & ประวัติ' },
+    'docs': { idx: 5, title: 'เอกสาร (Rechnungen)' }
   };
 
   if(document.getElementById('view-' + view)) document.getElementById('view-' + view).classList.add('active');
@@ -40,6 +42,7 @@ function switchView(view) {
   if (view === 'cus') renderCustomers();
   if (view === 'dash') updateDashboard();
   if (view === 'inst') renderInstallments();
+  if (view === 'docs') renderDocuments();
   closeAllPanels();
 }
 
@@ -54,7 +57,7 @@ function setupRealtime() {
     } else if (e.action === 'delete') {
       state.allOrders = state.allOrders.filter(o => o.id !== record.id);
     }
-    updateDashboard(); renderInstallments(); renderCustomers(); 
+    updateDashboard(); renderInstallments(); renderCustomers(); renderDocuments();
   });
 
   pb.collection('customers').subscribe('*', function (e) {
@@ -149,7 +152,8 @@ Object.assign(window, {
   goToCustomerDetail, goBackCustomer, goToOrderDetail, updateCusSearch, setCusOwnerView,
   submitOrder, cancelEdit, resetForm, updateDashboard, loadHistory, printReceipt, editOrder, delOrder, renderInstallments, payInstallment,
   markAsPaid, updateInstallmentCalc, editInstallmentAmount, editInstallmentTerms, showInstallmentHistory, deleteInstallmentPayment, showProfileModal, logout,
-  setOrdersOwnerView
+  setOrdersOwnerView,
+  renderDocuments, switchDocTab, handleAmwayUpload, generateRechnung, deleteAmwayInvoice, downloadAmwayInvoice
 });
 
 

@@ -240,6 +240,22 @@ export async function submitOrder() {
   Swal.fire({ title: 'กำลังบันทึก...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
 
   try {
+    // ถ้ากำลังแก้ไขออเดอร์ และมีการอัปโหลดไฟล์ PDF → สร้าง record ใน amway_invoices ก่อน
+    const pdfFileInput = document.getElementById('amwayPdfFile');
+    if (state.currentEditId && pdfFileInput && pdfFileInput.files.length > 0) {
+      const file = pdfFileInput.files[0];
+      const fd = new FormData();
+      fd.append('invoice_number', payload.orderRef || '');
+      fd.append('invoice_date', payload.orderDate || new Date().toISOString());
+      fd.append('pdf_file', file);
+      if (pb.authStore.model) fd.append('owner', pb.authStore.model.id);
+      const invRecord = await pb.collection('amway_invoices').create(fd);
+      payload.amwayInvoiceId = invRecord.id;
+      // Also push into local state so the Documents view doesn't need a re-fetch
+      state.amwayInvoices = state.amwayInvoices || [];
+      state.amwayInvoices.unshift(invRecord);
+    }
+
     let record;
     if (state.currentEditId) {
         record = await pb.collection('orders').update(state.currentEditId, payload);
@@ -259,13 +275,18 @@ export function cancelEdit() {
 }
 
 export function resetForm() {
-  state.currentEditId = null; 
+  state.currentEditId = null;
   document.getElementById('editModeBanner').style.display = 'none';
-  clearCart(); 
+  clearCart();
   document.getElementById('orderDate').valueAsDate = new Date();
-  document.getElementById('orderRemark').value = ''; 
+  document.getElementById('orderRemark').value = '';
   setCustomerSelectValue('');
-  if(document.getElementById('orderRef')) document.getElementById('orderRef').value = ''; 
+  if(document.getElementById('orderRef')) document.getElementById('orderRef').value = '';
+  // Hide and clear the Amway PDF upload area
+  const pdfArea = document.getElementById('amwayPdfUploadArea');
+  if (pdfArea) pdfArea.style.display = 'none';
+  const pdfFile = document.getElementById('amwayPdfFile');
+  if (pdfFile) pdfFile.value = '';
   if(document.getElementById('paymentStatus')) document.getElementById('paymentStatus').value = 'ยังไม่จ่าย';
   if(document.getElementById('discountInput')) document.getElementById('discountInput').value = '';
   if(document.getElementById('arBalanceInput')) document.getElementById('arBalanceInput').value = '0';
@@ -339,6 +360,14 @@ export function loadHistory() {
 
     const displayId = g.orderNumber || g.id;
 
+    // 🖨️ ใบเสร็จ (Slip) — always available
+    const slipBtn = `<span style="font-size:0.82rem; color:#475569; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px; background:#F1F5F9; padding:6px 10px; border-radius:6px; border:1px solid #E2E8F0; white-space:nowrap;" onclick="printReceipt('${g.id}')"><i class="ph ph-printer"></i> ใบเสร็จ (Slip)</span>`;
+
+    // 👁️ พรีวิว Rechnung — shown only for completed orders
+    const rechnungBtn = g.paymentStatus === 'จ่ายแล้ว'
+      ? `<span style="font-size:0.82rem; color:var(--primary-dk); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px; background:#ECFDF5; padding:6px 10px; border-radius:6px; border:1px solid #A7F3D0; white-space:nowrap;" onclick="generateRechnung('${g.id}', 'preview')"><i class="ph ph-file-pdf"></i> พรีวิว Rechnung</span>`
+      : '';
+
     let quickPayBtn = '';
     if (g.paymentStatus === 'ยังไม่จ่าย') {
         quickPayBtn = `<span style="font-size:0.85rem; color:var(--accent); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="markAsPaid('${g.id}')"><i class="ph ph-hand-coins"></i> รับชำระเงิน</span>`;
@@ -365,9 +394,10 @@ export function loadHistory() {
         <div style="background:#F8FAFC; padding:12px 15px; border-radius:8px; margin-bottom:12px; border: 1px solid #E2E8F0;">${itemsHtml}</div>
         ${Number(g.ar_balance) > 0 ? `<div style="font-size:0.85rem; color:#1E40AF; background:#EFF6FF; padding:8px 12px; border-radius:6px; margin-bottom:8px; border: 1px solid #BFDBFE; display:flex; justify-content:space-between; align-items:center;"><span><i class="ph-fill ph-bank" style="color:#3B82F6;"></i> <span style="font-weight:600;">AR Balance:</span> -€${Number(g.ar_balance).toFixed(2)}</span></div>` : ''}
         ${g.remark ? `<div style="font-size:0.85rem; color:#92400E; background:#FFFBEB; padding:8px 12px; border-radius:6px; margin-bottom:12px; border: 1px solid #FDE68A;"><i class="ph-fill ph-note" style="color:#D97706;"></i> <span style="font-weight:600;">หมายเหตุ:</span> ${g.remark}</div>` : ''}
-        <div style="display:flex; gap:15px; justify-content: flex-end; flex-wrap: wrap;">
+        <div style="display:flex; gap:8px; justify-content: flex-end; flex-wrap: wrap; align-items:center;">
           ${quickPayBtn}
-          <span style="font-size:0.85rem; color:var(--success); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="printReceipt('${g.id}')"><i class="ph ph-printer"></i> พิมพ์</span>
+          ${slipBtn}
+          ${rechnungBtn}
           <span style="font-size:0.85rem; color:var(--primary-lt); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="editOrder('${g.id}')"><i class="ph ph-pencil-simple"></i> แก้ไข</span>
           <span style="font-size:0.85rem; color:var(--danger); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="delOrder('${g.id}')"><i class="ph ph-trash"></i> ลบ</span>
         </div>
@@ -491,7 +521,13 @@ export function editOrder(id) {
 
       document.getElementById('editModeBanner').style.display = 'flex';
       document.getElementById('editModeText').innerText = `กำลังแก้ไขรหัส: ${order.orderRef || order.orderNumber || order.id}`;
-      
+
+      // Show the Amway PDF upload area so the user can attach the invoice
+      const pdfArea = document.getElementById('amwayPdfUploadArea');
+      if (pdfArea) pdfArea.style.display = 'block';
+      const pdfFileEl = document.getElementById('amwayPdfFile');
+      if (pdfFileEl) pdfFileEl.value = ''; // clear any previous selection
+
       updateCart();
       updateInstallmentCalc();
       window.switchView('pos');

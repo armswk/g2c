@@ -28,6 +28,10 @@
     <link href="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/css/tom-select.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/tom-select@2.2.2/dist/js/tom-select.complete.min.js"></script>
 
+    <!-- PDF generation (jsPDF + AutoTable) สำหรับออกใบกำกับ Rechnung -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
     <!-- นำเข้า Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
 
@@ -113,6 +117,7 @@
           <div class="nav-item" onclick="switchView('cus')"><i class="ph ph-users"></i> ทะเบียนลูกค้า</div>
           <div class="nav-item" onclick="switchView('inst')"><i class="ph ph-wallet"></i> ระบบผ่อนชำระ</div>
           <div class="nav-item" onclick="switchView('dash')"><i class="ph ph-chart-line-up"></i> รายงาน & ประวัติ</div>
+          <div class="nav-item" onclick="switchView('docs')"><i class="ph ph-files"></i> เอกสาร (Rechnungen)</div>
         </div>
         
         <div style="padding: 15px 20px; font-size: 0.8rem; color: rgba(255,255,255,0.5); border-top: 1px solid rgba(255,255,255,0.1);">
@@ -212,6 +217,13 @@
                   <select id="orderOwnerSelect" class="c-input" style="margin-bottom: 8px;"></select>
                   <!-- 🔥 เปลี่ยน Placeholder -->
                   <input type="text" id="orderRef" class="c-input" placeholder="เลขอ้างอิงสั่งซื้อ (ถ้ามี)" style="margin-bottom: 8px;">
+                  <!-- อัปโหลดบิล Amway (PDF) — แสดงเฉพาะตอนแก้ไขออเดอร์ -->
+                  <div id="amwayPdfUploadArea" style="display:none; margin-bottom: 8px;">
+                    <label style="font-size: 0.85rem; font-weight: 700; color: var(--text); display: block; margin-bottom: 4px;">
+                      <i class="ph-fill ph-file-pdf" style="color: var(--danger);"></i> อัปโหลดบิล Amway (PDF)
+                    </label>
+                    <input type="file" id="amwayPdfFile" accept="application/pdf" class="c-input" style="padding: 6px; font-size: 0.85rem;">
+                  </div>
                   
                   <label style="font-size: 0.85rem; font-weight: 700; color: var(--text); display: block; margin-bottom: 6px; margin-top:8px;">2. การชำระเงิน</label>
                   <select id="paymentStatus" class="c-input" style="margin-bottom: 8px; font-weight: 600;" onchange="togglePaymentOptions()">
@@ -383,6 +395,56 @@
           </div>
         </div>
 
+        <!-- View 6: Documents / Rechnungen -->
+        <div id="view-docs" class="view-container">
+          <div class="dash-layout">
+            <div style="display:flex; justify-content:space-between; margin-bottom: 20px; align-items:center;">
+              <h2 style="color:var(--primary-dk); font-size:1.5rem; font-weight: 700; margin: 0;"><i class="ph-fill ph-files"></i> เอกสาร (Rechnungen)</h2>
+            </div>
+
+            <!-- Tabs -->
+            <div class="doc-tabs">
+              <button id="doc-tab-amway" class="doc-tab active" onclick="switchDocTab('amway')"><i class="ph ph-download-simple"></i> บิลซื้อเข้า (Amway Invoices)</button>
+              <button id="doc-tab-pos" class="doc-tab" onclick="switchDocTab('pos')"><i class="ph ph-receipt"></i> บิลขายออก (POS Rechnungen)</button>
+            </div>
+
+            <!-- Tab 1: Amway Invoices (upload + list skeleton) -->
+            <div id="docs-pane-amway">
+              <div class="history-card" style="margin-bottom: 20px;">
+                <div style="padding: 15px 20px; background: #F8FAFC; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 1.1rem; color: var(--primary-dk);">
+                  อัปโหลดบิลซื้อเข้าจาก Amway (PDF)
+                </div>
+                <div style="padding: 25px 20px;">
+                  <label for="amwayUploadInput" id="amwayDropzone" style="display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; padding:35px 20px; border:2px dashed #CBD5E1; border-radius:12px; background:#F8FAFC; cursor:pointer; transition:0.2s; text-align:center;" onmouseover="this.style.borderColor='var(--primary-lt)'; this.style.background='#F0FDF4';" onmouseout="this.style.borderColor='#CBD5E1'; this.style.background='#F8FAFC';">
+                    <i class="ph-fill ph-file-pdf" style="font-size:3rem; color:var(--primary-lt);"></i>
+                    <div style="font-weight:600; color:var(--text);">ลากไฟล์ PDF มาวาง หรือคลิกเพื่อเลือกไฟล์</div>
+                    <div style="font-size:0.8rem; color:var(--text-muted);">รองรับเฉพาะไฟล์ .pdf จาก Amway</div>
+                  </label>
+                  <input type="file" id="amwayUploadInput" accept="application/pdf" multiple style="display:none;" onchange="handleAmwayUpload(this.files)">
+                </div>
+              </div>
+
+              <div class="history-card">
+                <div style="padding: 15px 20px; background: #F8FAFC; border-bottom: 1px solid var(--border); font-weight: 700; font-size: 1.1rem; color: var(--primary-dk);">
+                  รายการบิลซื้อเข้า
+                </div>
+                <div id="docs-amway-list"></div>
+              </div>
+            </div>
+
+            <!-- Tab 2: POS Rechnungen (orders list w/ Download PDF) -->
+            <div id="docs-pane-pos" style="display:none;">
+              <div class="history-card">
+                <div style="padding: 15px 20px; background: #F8FAFC; border-bottom: 1px solid var(--border); display:flex; flex-wrap:wrap; gap:10px; align-items:center;">
+                  <span style="font-weight: 700; font-size: 1.1rem; color: var(--primary-dk); flex:1;">บิลขายออก (ออเดอร์ทั้งหมด)</span>
+                  <input type="month" id="docsPosMonth" class="c-input" style="width:auto; margin:0; font-weight:600;" onchange="renderDocuments()">
+                </div>
+                <div id="docs-pos-list"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <!-- Mobile Bottom Nav -->
         <nav class="mobile-bottom-nav">
             <div class="bottom-nav-item active" onclick="switchView('pos')">
@@ -404,6 +466,10 @@
             <div class="bottom-nav-item" onclick="switchView('dash')">
               <i class="ph ph-chart-line-up"></i>
               <span>รายงาน</span>
+            </div>
+            <div class="bottom-nav-item" onclick="switchView('docs')">
+              <i class="ph ph-files"></i>
+              <span>เอกสาร</span>
             </div>
             <div class="bottom-nav-item" onclick="showProfileModal()">
               <i class="ph ph-user-circle"></i>

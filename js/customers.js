@@ -401,6 +401,11 @@ function getCustomerDetailHTML() {
         const dateStr = isNaN(d.getTime()) ? '-' : d.toLocaleDateString('th-TH', { day: '2-digit', month: 'short', year: 'numeric' });
         const itemCount = (o.items || []).reduce((s, i) => s + (Number(i.qty) || 0), 0);
         const safeOid = escapeHtml(o.id);
+        // 🖨️ Slip + 👁️ Rechnung preview — stopPropagation so clicks don't navigate
+        const slipBtn = `<button onclick="event.stopPropagation(); printReceipt('${safeOid}')" title="ใบเสร็จ (Slip)" class="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300"><i class="ph ph-printer"></i> Slip</button>`;
+        const rechnungBtn = o.paymentStatus === 'จ่ายแล้ว'
+          ? `<button onclick="event.stopPropagation(); generateRechnung('${safeOid}', 'preview')" title="พรีวิว Rechnung" class="shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300"><i class="ph-bold ph-file-pdf"></i> Rechnung</button>`
+          : '';
         return `
           <div class="bg-white rounded-lg border border-gray-200 p-3 flex items-center gap-3 cursor-pointer hover:border-emerald-400 hover:shadow-sm transition"
                onclick="goToOrderDetail('${safeOid}')">
@@ -414,6 +419,10 @@ function getCustomerDetailHTML() {
             <div class="text-right">
               <div class="text-base font-bold text-emerald-700">€${(Number(o.totalPrice) || 0).toFixed(2)}</div>
               <div class="text-[11px] text-gray-400">${escapeHtml(o.paymentStatus || '')}</div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              ${slipBtn}
+              ${rechnungBtn}
             </div>
             <i class="ph-bold ph-caret-right text-gray-400"></i>
           </div>`;
@@ -560,6 +569,10 @@ function getOrderDetailHTML() {
       `).join('');
 
   const safeOid = escapeHtml(o.id);
+  const slipBtn = `<button onclick="printReceipt('${safeOid}')" class="px-3 py-1.5 rounded-md text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200 border border-gray-300 flex items-center gap-1" title="ใบเสร็จ (Slip)"><i class="ph ph-printer"></i> ใบเสร็จ (Slip)</button>`;
+  const rechnungBtn = o.paymentStatus === 'จ่ายแล้ว'
+    ? `<button onclick="generateRechnung('${safeOid}', 'preview')" class="px-3 py-1.5 rounded-md text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-300 flex items-center gap-1" title="พรีวิว Rechnung"><i class="ph-bold ph-file-pdf"></i> พรีวิว Rechnung</button>`
+    : '';
 
   return `
     <div class="flex flex-col h-full">
@@ -568,9 +581,10 @@ function getOrderDetailHTML() {
           <button onclick="goBackCustomer()" class="p-1 rounded hover:bg-gray-100"><i class="ph-bold ph-arrow-left text-xl"></i></button>
           <h2 class="text-lg font-bold text-emerald-900">รายละเอียดออเดอร์</h2>
         </div>
-        <button onclick="printReceipt('${safeOid}')" class="p-2 rounded hover:bg-gray-100 text-emerald-700" title="พิมพ์">
-          <i class="ph ph-printer text-lg"></i>
-        </button>
+        <div class="flex items-center gap-2">
+          ${slipBtn}
+          ${rechnungBtn}
+        </div>
       </div>
 
       <div class="flex-1 overflow-y-auto p-3 space-y-3">
