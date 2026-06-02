@@ -254,6 +254,9 @@ function renderPosList() {
           <div style="font-size:0.83rem; color:var(--text-muted);">👤 ${escapeHtml(getOrderCustomerName(o))} &nbsp;|&nbsp; 📅 ${dStr} ${refHtml ? '&nbsp;|&nbsp; ' + refHtml : ''}</div>
         </div>
         <div style="font-size:1.1rem; font-weight:700; color:var(--primary); white-space:nowrap;">€${(Number(o.totalPrice) || 0).toFixed(2)}</div>
+        <button onclick="generateRechnung('${o.id}', 'preview')" style="background:#fff; color:var(--primary-dk); border:1.5px solid var(--primary); padding:8px 14px; border-radius:8px; font-family:inherit; font-weight:600; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px; white-space:nowrap;">
+          <i class="ph-bold ph-eye"></i> Preview
+        </button>
         <button onclick="generateRechnung('${o.id}')" style="background:var(--primary); color:#fff; border:none; padding:8px 14px; border-radius:8px; font-family:inherit; font-weight:600; font-size:0.85rem; cursor:pointer; display:flex; align-items:center; gap:6px; white-space:nowrap;">
           <i class="ph-bold ph-file-pdf"></i> Download PDF
         </button>
@@ -299,17 +302,34 @@ function parseBusinessInfo(raw) {
   };
   const bank = (bi.bank && typeof bi.bank === 'object') ? bi.bank : {};
 
+  // Build a multi-line address from structured fields (street / address_line2 /
+  // plz + city). Falls back to the legacy "address" key if no structured fields
+  // are present, so existing users' data keeps rendering.
+  function buildAddress() {
+    const street  = pick('street');
+    const line2   = pick('address_line2');
+    const plz     = pick('plz');
+    const city    = pick('city');
+    const parts = [street];
+    if (line2) parts.push(line2);
+    if (plz || city) parts.push((plz + ' ' + city).trim());
+    const joined = parts.filter(Boolean).join('\n');
+    if (joined) return joined;
+    // Fallback to legacy address key
+    return pick('address', 'adresse', 'companyAddress', 'company_address');
+  }
+
   return {
     companyName:      pick('companyName', 'company_name', 'company', 'firma', 'name'),
-    managingDirector: pick('managingDirector', 'geschaeftsfuehrer', 'geschäftsführer', 'ceo', 'director', 'owner'),
-    address:          pick('address', 'adresse', 'companyAddress', 'company_address'),
-    taxNumber:        pick('taxNumber', 'steuernummer', 'tax_number', 'steuerNr'),
+    managingDirector: pick('managingDirector', 'geschaeftsfuehrer', 'geschäftsführer', 'ceo', 'director', 'owner', 'manager_name'),
+    address:          buildAddress(),
+    taxNumber:        pick('taxNumber', 'steuernummer', 'tax_number', 'steuerNr', 'tax_id'),
     vatId:            pick('vatId', 'ustId', 'ust_id', 'ustIdNr', 'vat', 'vatNumber', 'vat_id'),
     bankName: (bank.name || bank.bankName || '') || pick('bankName', 'bank_name', 'bank'),
     iban:     (bank.iban || '')                  || pick('iban', 'IBAN'),
     bic:      (bank.bic  || bank.swift || '')    || pick('bic', 'BIC', 'swift'),
-    phone:            pick('phone', 'tel', 'telephone'),
-    email:            pick('email', 'mail')
+    phone:            pick('company_phone', 'phone', 'tel', 'telephone'),
+    email:            pick('company_email', 'email', 'mail')
   };
 }
 
@@ -339,201 +359,41 @@ async function getOwnerBusinessInfo(ownerId) {
   return parseBusinessInfo(raw);
 }
 
-// ===== German "Rechnung" PDF generation =====
-const fmtEUR = n => (Number(n) || 0).toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+// ===== German "Rechnung" PDF generation (DIN 5008) =====
 
-export async function generateRechnung(orderId) {
-  const order = state.allOrders.find(o => o.id === orderId);
-  if (!order) return Swal.fire('Fehler', 'ไม่พบออเดอร์', 'error');
+// ── Safe value helpers ──
+// jsPDF throws "Invalid argument" when doc.text() or autoTable receives
+// null, undefined, or a non-string. These helpers ensure every dynamic
+// value is safely stringified before reaching jsPDF.
 
-  const jspdfNs = window.jspdf;
-  if (!jspdfNs || !jspdfNs.jsPDF) {
-    return Swal.fire('Fehler', 'ไม่สามารถโหลดไลบรารีสร้าง PDF ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', 'error');
-  }
+/** Convert anything to a safe string for doc.text() / autoTable cells. */
+const S = v => (v == null) ? '' : String(v);
 
-  Swal.fire({ title: 'กำลังสร้าง Rechnung...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+/** Format a number as German currency string "1.234,56 €". Never returns empty. */
+const fmtEUR = n => {
+  const num = Number(n);
+  const safe = isFinite(num) ? num : 0;
+  return safe.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+};
 
-  try {
-    const seller = await getOwnerBusinessInfo(order.owner);
-    const customer = state.allCustomers.find(c => c.id === getOrderCustomerId(order)) || null;
+/** Ensure text passed to doc.text() is never null/undefined/empty.
+ *  If the value is empty after trimming, returns fallback. */
+const T = (v, fallback) => {
+  const s = S(v).trim();
+  return s || (fallback != null ? S(fallback) : ' ');
+};
 
-    const { jsPDF } = jspdfNs;
-    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-    registerThaiFont(doc);
-    const pageW = doc.internal.pageSize.getWidth();
-    const marginX = 18;
-    let y = 20;
-
-    // --- Seller header (Verkäufer) ---
-    doc.setFont('Sarabun', 'bold');
-    doc.setFontSize(15);
-    doc.setTextColor(26, 83, 54); // primary-dk
-    doc.text(seller.companyName || 'Verkäufer', marginX, y);
-
-    doc.setFont('Sarabun', 'normal');
-    doc.setFontSize(9);
-    doc.setTextColor(80, 80, 80);
-    let sy = y + 6;
-    const sellerLines = [];
-    if (seller.managingDirector) sellerLines.push('Geschäftsführer: ' + seller.managingDirector);
-    splitAddress(seller.address).forEach(l => sellerLines.push(l));
-    if (seller.phone) sellerLines.push('Tel: ' + seller.phone);
-    if (seller.email) sellerLines.push(seller.email);
-    sellerLines.forEach(line => { doc.text(line, marginX, sy); sy += 4.5; });
-
-    // --- Document title + meta block (right) ---
-    doc.setFont('Sarabun', 'bold');
-    doc.setFontSize(22);
-    doc.setTextColor(30, 30, 30);
-    doc.text('RECHNUNG', pageW - marginX, y, { align: 'right' });
-
-    doc.setFontSize(9.5);
-    doc.setFont('Sarabun', 'normal');
-    doc.setTextColor(60, 60, 60);
-    let my = y + 9;
-    const orderDate = new Date(order.orderDate || order.date);
-    const dateStr = isNaN(orderDate.getTime()) ? '-' : orderDate.toLocaleDateString('de-DE');
-    const metaRows = [
-      ['Rechnungs-Nr.:', order.orderNumber || order.id],
-      ['Rechnungsdatum:', dateStr]
-    ];
-    if (order.orderRef && String(order.orderRef).trim() !== '') {
-      metaRows.splice(1, 0, ['Referenz:', String(order.orderRef)]);
-    }
-    metaRows.forEach(([label, val]) => {
-      doc.setFont('Sarabun', 'bold');
-      doc.text(label, pageW - marginX - 42, my, { align: 'left' });
-      doc.setFont('Sarabun', 'normal');
-      doc.text(String(val), pageW - marginX, my, { align: 'right' });
-      my += 5;
-    });
-
-    // --- Buyer (Käufer) block ---
-    y = Math.max(sy, my) + 8;
-    doc.setDrawColor(220, 220, 220);
-    doc.line(marginX, y, pageW - marginX, y);
-    y += 8;
-
-    doc.setFont('Sarabun', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(120, 120, 120);
-    doc.text('RECHNUNG AN (Käufer):', marginX, y);
-    y += 5.5;
-
-    doc.setFont('Sarabun', 'bold');
-    doc.setFontSize(11);
-    doc.setTextColor(30, 30, 30);
-    const buyerName = customer ? (customer.name || customer.nickname || '') : getOrderCustomerName(order);
-    doc.text(buyerName || '-', marginX, y);
-    y += 5.5;
-
-    doc.setFont('Sarabun', 'normal');
-    doc.setFontSize(9.5);
-    doc.setTextColor(70, 70, 70);
-    if (customer && customer.address) {
-      splitAddress(customer.address).forEach(l => { doc.text(l, marginX, y); y += 4.8; });
-    }
-
-    // --- Items table ---
-    const items = order.items || [];
-    const body = items.map((it, idx) => {
-      const qty = Number(it.qty) || 0;
-      const unit = Number(it.price) || 0;
-      return [
-        String(idx + 1),
-        it.name || '',
-        String(qty),
-        fmtEUR(unit),
-        fmtEUR(unit * qty)
-      ];
-    });
-
-    doc.autoTable({
-      startY: y + 4,
-      margin: { left: marginX, right: marginX },
-      head: [['Pos.', 'Bezeichnung', 'Menge', 'Einzelpreis', 'Gesamt']],
-      body: body.length ? body : [['', 'Keine Artikel', '', '', '']],
-      theme: 'striped',
-      styles: { font: 'Sarabun', fontSize: 9, cellPadding: 2.5, textColor: [40, 40, 40] },
-      headStyles: { fillColor: [45, 106, 79], textColor: [255, 255, 255], fontStyle: 'bold' },
-      columnStyles: {
-        0: { halign: 'center', cellWidth: 12 },
-        2: { halign: 'center', cellWidth: 18 },
-        3: { halign: 'right', cellWidth: 30 },
-        4: { halign: 'right', cellWidth: 30 }
-      }
-    });
-
-    // --- Totals ---
-    const subtotal = items.reduce((s, it) => s + (Number(it.price) || 0) * (Number(it.qty) || 0), 0);
-    const discount = Number(order.discount) || 0;
-    const arBalance = Number(order.ar_balance) || 0;
-    const net = Number(order.totalPrice) || 0;
-
-    let ty = doc.lastAutoTable.finalY + 8;
-    const totalsX = pageW - marginX;
-    const labelX = pageW - marginX - 55;
-
-    const totalRow = (label, val, bold = false, color = [60, 60, 60]) => {
-      doc.setFont('Sarabun', bold ? 'bold' : 'normal');
-      doc.setFontSize(bold ? 11.5 : 9.5);
-      doc.setTextColor(color[0], color[1], color[2]);
-      doc.text(label, labelX, ty);
-      doc.text(val, totalsX, ty, { align: 'right' });
-      ty += bold ? 7 : 5.5;
-    };
-
-    totalRow('Zwischensumme:', fmtEUR(subtotal));
-    if (discount > 0) totalRow('Rabatt:', '-' + fmtEUR(discount), false, [192, 57, 43]);
-    if (arBalance > 0) totalRow('AR-Guthaben:', '-' + fmtEUR(arBalance), false, [29, 78, 216]);
-
-    doc.setDrawColor(45, 106, 79);
-    doc.line(labelX, ty - 2, totalsX, ty - 2);
-    ty += 2;
-    totalRow('Gesamtbetrag:', fmtEUR(net), true, [26, 83, 54]);
-
-    // Small-business note (most Amway resellers fall under §19 UStG). Shown only
-    // when no VAT-ID is present, so VAT-registered sellers don't see it.
-    if (!seller.vatId) {
-      ty += 4;
-      doc.setFont('Sarabun', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(110, 110, 110);
-      doc.text('Gemäß § 19 UStG wird keine Umsatzsteuer berechnet.', marginX, ty);
-    }
-
-    // --- Footer: tax / bank details ---
-    const pageH = doc.internal.pageSize.getHeight();
-    let fy = pageH - 28;
-    doc.setDrawColor(220, 220, 220);
-    doc.line(marginX, fy - 4, pageW - marginX, fy - 4);
-
-    doc.setFont('Sarabun', 'normal');
-    doc.setFontSize(7.8);
-    doc.setTextColor(110, 110, 110);
-
-    const col1 = [];
-    if (seller.taxNumber) col1.push('Steuernummer: ' + seller.taxNumber);
-    if (seller.vatId) col1.push('USt.-IdNr.: ' + seller.vatId);
-
-    const col2 = [];
-    if (seller.bankName) col2.push('Bank: ' + seller.bankName);
-    if (seller.iban) col2.push('IBAN: ' + seller.iban);
-    if (seller.bic) col2.push('BIC: ' + seller.bic);
-
-    let c1y = fy;
-    col1.forEach(l => { doc.text(l, marginX, c1y); c1y += 3.8; });
-    let c2y = fy;
-    col2.forEach(l => { doc.text(l, pageW / 2, c2y); c2y += 3.8; });
-
-    doc.save(`Rechnung_${order.orderNumber || order.id}.pdf`);
-    Swal.close();
-  } catch (e) {
-    Swal.fire('Fehler', 'สร้าง PDF ไม่สำเร็จ: ' + e.message, 'error');
-  }
+// Parse a multi-line address into { street, plzCity } parts.
+// Last line is assumed to be "PLZ City"; earlier lines are street.
+function parseAddressParts(addr) {
+  const lines = splitAddress(addr);
+  if (lines.length === 0) return { street: '', plzCity: '' };
+  if (lines.length === 1) return { street: lines[0], plzCity: '' };
+  const plzCity = lines[lines.length - 1];
+  const street = lines.slice(0, -1).join(' · ');
+  return { street, plzCity };
 }
 
-// Split a multi-line / comma-ish address string into trimmed lines for the PDF.
 function splitAddress(addr) {
   if (!addr) return [];
   return String(addr)
@@ -546,4 +406,351 @@ function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+export async function generateRechnung(orderId, action = 'download') {
+  const order = state.allOrders.find(o => o.id === orderId);
+  if (!order) return Swal.fire('Fehler', 'ไม่พบออเดอร์', 'error');
+
+  const jspdfNs = window.jspdf;
+  if (!jspdfNs || !jspdfNs.jsPDF) {
+    return Swal.fire('Fehler', 'ไม่สามารถโหลดไลบรารีสร้าง PDF ได้ กรุณาตรวจสอบการเชื่อมต่ออินเทอร์เน็ต', 'error');
+  }
+
+  const isPreview = action === 'preview';
+  Swal.fire({ title: isPreview ? 'กำลังสร้างตัวอย่าง...' : 'กำลังสร้าง Rechnung...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+
+  try {
+    // ── Resolve seller & customer ──
+    const seller = await getOwnerBusinessInfo(order.owner);
+    const customer = state.allCustomers.find(c => c.id === getOrderCustomerId(order)) || null;
+
+    // ── Guard every seller field against null/undefined ──
+    const SE = (key, fallback) => T((seller && seller[key]), fallback || '');
+    const sellerCompany   = SE('companyName', 'Unternehmen');
+    const sellerDirector  = SE('managingDirector');
+    const sellerPhone     = SE('phone');
+    const sellerTax       = SE('taxNumber');
+    const sellerVat       = SE('vatId');
+    const sellerBank      = SE('bankName');
+    const sellerIban      = SE('iban');
+    const sellerBic       = SE('bic');
+
+    // Resolve business email: company_email (from business_info) first,
+    // then fall back to the owner's account email.
+    const sellerBizEmail = SE('email');       // picks company_email > email > mail
+    let ownerEmail = sellerBizEmail;
+    if (!ownerEmail) {
+      try {
+        if (pb.authStore.model && (!order.owner || order.owner === pb.authStore.model.id)) {
+          ownerEmail = pb.authStore.model.email || '';
+        } else if (order.owner) {
+          const cached = (state.downlines || []).find(u => u.id === order.owner);
+          ownerEmail = cached ? (cached.email || '') : '';
+        }
+      } catch (e) { ownerEmail = ''; }
+    }
+
+    const { jsPDF } = jspdfNs;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    registerThaiFont(doc);
+    const pageW = doc.internal.pageSize.getWidth();
+    const MARGIN = 20;
+    const RIGHT_X = pageW - MARGIN;
+
+    // ── Seller address parts ──
+    const sellerAddr = parseAddressParts(seller ? seller.address : '');
+    const addrParts = [sellerCompany, sellerAddr.street, sellerAddr.plzCity].filter(Boolean);
+    const headerOneLine = addrParts.length > 0 ? addrParts.join(' – ') : 'Unternehmen';
+
+    // ── Dates ──
+    const orderDate = new Date(order.orderDate || order.date || Date.now());
+    const dateStr = isNaN(orderDate.getTime())
+      ? new Date().toLocaleDateString('de-DE')
+      : orderDate.toLocaleDateString('de-DE');
+
+    // ══════════════════════════════════════════════════════════════
+    //  1. HEADER
+    // ══════════════════════════════════════════════════════════════
+
+    // ── Top-left: seller one-line address (very small, grey) ──
+    doc.setFont('Sarabun', 'normal');
+    doc.setFontSize(7.5);
+    doc.setTextColor(140, 140, 140);
+    doc.text(T(headerOneLine), MARGIN, 45, { maxWidth: 115 });
+
+    // ── Left: buyer address block (Y=55) ──
+    // Issue #1: use getOrderCustomerName() alone — it already handles
+    // customerId / legacy fallback and nickname-vs-name display logic.
+    const buyerName = T(getOrderCustomerName(order), 'Kunde');
+    let buyerY = 55;
+
+    doc.setFont('Sarabun', 'bold');
+    doc.setFontSize(10);
+    doc.setTextColor(30, 30, 30);
+    doc.text(buyerName, MARGIN, buyerY);
+    buyerY += 5.5;
+
+    doc.setFont('Sarabun', 'normal');
+    doc.setFontSize(9.5);
+    doc.setTextColor(60, 60, 60);
+    if (customer && customer.address) {
+      splitAddress(customer.address).forEach(l => {
+        // Skip a line that duplicates the buyer name (some addresses include
+        // the recipient name on the first line of the address field).
+        if (l.trim().toLowerCase() === buyerName.toLowerCase()) return;
+        doc.text(T(l), MARGIN, buyerY);
+        buyerY += 5;
+      });
+    }
+
+    // ── Right: meta block (X=140, Y=50) ──
+    const META_X = 140;
+    let metaY = 50;
+
+    const metaRows = [
+      ['Rechnungs-Nr.:', T(order.orderNumber || order.id, '–')],
+    ];
+    // Issue #3: show the Amway order reference if present
+    const orderRef = S(order.orderRef || '').trim();
+    if (orderRef) {
+      metaRows.push(['Referenz:', orderRef]);
+    }
+    metaRows.push(
+      ['Rechnungsdatum:', dateStr],
+      ['Lieferdatum:',    dateStr]
+    );
+
+    metaRows.forEach(([label, val]) => {
+      doc.setFont('Sarabun', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(60, 60, 60);
+      doc.text(T(label), META_X, metaY);
+      doc.setFont('Sarabun', 'normal');
+      doc.text(T(val), META_X + 33, metaY);
+      metaY += 5.5;
+    });
+
+    // ══════════════════════════════════════════════════════════════
+    //  2. TITLE & INTRO
+    // ══════════════════════════════════════════════════════════════
+
+    doc.setFont('Sarabun', 'bold');
+    doc.setFontSize(20);
+    doc.setTextColor(30, 30, 30);
+    doc.text('Rechnung', MARGIN, 100);
+
+    doc.setFont('Sarabun', 'normal');
+    doc.setFontSize(10);
+    doc.setTextColor(80, 80, 80);
+    doc.text(
+      'Vielen Dank für Ihren Auftrag. Wir berechnen Ihnen folgende Lieferung bzw. Leistung:',
+      MARGIN, 115, { maxWidth: RIGHT_X - MARGIN }
+    );
+
+    // ══════════════════════════════════════════════════════════════
+    //  3. ITEMS TABLE (Y=125)
+    // ══════════════════════════════════════════════════════════════
+
+    const items = order.items || [];
+    // Issue #4: hardcoded to 0 % (Kleinunternehmer / steuerfrei)
+    const mwstLabel = '0 %';
+
+    // Every cell value is explicitly stringified — jsPDF/autoTable will
+    // reject null, undefined, or Number type values in body cells.
+    const body = items.map((it, idx) => {
+      const qty       = isFinite(Number(it && it.qty)) ? Number(it.qty) : 0;
+      const unitPrice = isFinite(Number(it && it.price)) ? Number(it.price) : 0;
+      const lineTotal = unitPrice * qty;
+      // Combine brand + product name when a meaningful brand exists
+      const brandLabel = (it && it.brand && it.brand !== 'ทั่วไป')
+        ? it.brand + ' — ' + S(it && it.name)
+        : S(it && it.name);
+      return [
+        S(idx + 1),                    // Pos.
+        brandLabel,                    // Artikel / Leistung
+        S(qty),                        // Menge
+        'Stk.',                        // Einheit (always a literal)
+        mwstLabel,                     // MwSt. (always a literal)
+        fmtEUR(unitPrice),             // Preis (always returns string)
+        fmtEUR(lineTotal)              // Gesamt (always returns string)
+      ];
+    });
+
+    const TABLE_START = 125;
+
+    doc.autoTable({
+      startY: TABLE_START,
+      margin: { left: MARGIN, right: MARGIN },
+      head: [[
+        'Pos.', 'Artikel / Leistung', 'Menge', 'Einheit',
+        'MwSt.', 'Preis', 'Gesamt'
+      ]],
+      body: body.length > 0 ? body : [['', 'Keine Artikel', '', '', '', '', '']],
+      theme: 'plain',
+      styles: {
+        font: 'Sarabun',
+        fontSize: 9,
+        cellPadding: 3,
+        textColor: [40, 40, 40],
+        lineWidth: 0
+      },
+      headStyles: {
+        fillColor: [255, 255, 255],
+        textColor: [40, 40, 40],
+        fontStyle: 'bold',
+        lineColor: [60, 60, 60],
+        lineWidth: { top: 0.3, bottom: 0.3, left: 0, right: 0 }
+      },
+      columnStyles: {
+        0: { halign: 'center' },
+        1: { halign: 'left' },
+        2: { halign: 'center' },
+        3: { halign: 'center' },
+        4: { halign: 'center' },
+        5: { halign: 'right' },
+        6: { halign: 'right' }
+      }
+    });
+
+    // ══════════════════════════════════════════════════════════════
+    //  4. TOTALS BLOCK
+    // ══════════════════════════════════════════════════════════════
+
+    const subtotal  = items.reduce((s, it) => s + (isFinite(Number(it && it.price)) ? Number(it.price) : 0) * (isFinite(Number(it && it.qty)) ? Number(it.qty) : 0), 0);
+    const discount  = isFinite(Number(order.discount))   ? Number(order.discount)   : 0;
+    const arBalance = isFinite(Number(order.ar_balance)) ? Number(order.ar_balance) : 0;
+    const net       = isFinite(Number(order.totalPrice))  ? Number(order.totalPrice)  : subtotal;
+
+    let ty = doc.lastAutoTable.finalY + 10;
+    
+    // บังคับพิกัดแกน X ให้ตรงกับ "ตัวหนังสือ" ในตารางเป๊ะๆ
+    // RIGHT_X คือขอบเส้นตาราง หักลบ cellPadding 3mm 
+    const TOTALS_VAL_X = RIGHT_X - 3; 
+    const LABEL_X      = RIGHT_X - 45;
+    const LINE_LEFT    = RIGHT_X - 50;
+
+    const totalRow = (label, val, bold) => {
+      doc.setFont('Sarabun', bold ? 'bold' : 'normal');
+      doc.setFontSize(bold ? 11 : 9.5);
+      doc.setTextColor(bold ? 0 : 60, bold ? 0 : 60, bold ? 0 : 60);
+      doc.text(T(label), LABEL_X, ty);
+      doc.text(T(val), TOTALS_VAL_X, ty, { align: 'right' }); // บังคับชิดขวา
+      ty += bold ? 7 : 5.5;
+    };
+
+    totalRow('Summe netto', fmtEUR(subtotal));
+    if (discount > 0) totalRow('Rabatt',       '– ' + fmtEUR(discount));
+    if (arBalance > 0) totalRow('AR-Guthaben', '– ' + fmtEUR(arBalance));
+    totalRow('MwSt. ' + mwstLabel, '–');
+
+    ty += 1;
+    doc.setDrawColor(60, 60, 60);
+    doc.setLineWidth(0.3);
+    // วาดเส้นคั่นจากซ้าย ไปสุดที่ "ขอบเส้นตาราง (RIGHT_X)" พอดีเป๊ะ
+    doc.line(LINE_LEFT, ty, RIGHT_X, ty); 
+    ty += 6;  
+
+    totalRow('Gesamt', fmtEUR(net), true);
+
+    // ══════════════════════════════════════════════════════════════
+    //  5. OUTRO TEXT
+    // ══════════════════════════════════════════════════════════════
+
+    ty += 10;
+    doc.setFont('Sarabun', 'normal');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 100, 100);
+
+    doc.text('Zahlbar nach Erhalt der Rechnung.', MARGIN, ty);
+    ty += 6;
+
+    // Issue #6: always show the tax exemption note (MwSt is 0 %)
+    doc.setFontSize(8.5);
+    doc.text(
+      'Diese Rechnung enthält steuerfreie Umsätze nach §19 UStG, daher ist keine Umsatzsteuer enthalten und ausgewiesen.',
+      MARGIN, ty, { maxWidth: RIGHT_X - MARGIN }
+    );
+    ty += 6;
+
+    doc.setFontSize(9);
+    doc.text(
+      'Wir bedanken uns für Ihren Auftrag und freuen uns auf die weitere Zusammenarbeit.',
+      MARGIN, ty, { maxWidth: RIGHT_X - MARGIN }
+    );
+
+    // ══════════════════════════════════════════════════════════════
+    //  6. FOOTER  (3-column layout, Y ≥ 260)
+    // ══════════════════════════════════════════════════════════════
+
+    const FOOTER_Y = Math.max(260, ty + 18);
+
+    doc.setDrawColor(180, 180, 180);
+    doc.setLineWidth(0.2);
+    doc.line(MARGIN, FOOTER_Y - 4, RIGHT_X, FOOTER_Y - 4);
+
+    const colW = (RIGHT_X - MARGIN) / 3;
+    const COL1 = MARGIN;
+    const COL2 = MARGIN + colW;
+    const COL3 = MARGIN + 2 * colW;
+
+    // Shared footer helper — normal-weight lines
+    const footerLine = (text, x, y) => {
+      doc.setFont('Sarabun', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(110, 110, 110);
+      doc.text(T(text), x, y);
+      return y + 3.8;
+    };
+
+    // ── Column 1: Company ──
+    // Issue #2: explicitly set bold for the company name, then switch back.
+    let fy = FOOTER_Y;
+    doc.setFont('Sarabun', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(110, 110, 110);
+    doc.text(T(sellerCompany), COL1, fy);
+    fy += 4.2;
+    // Switch back to normal for address lines below the company name
+    if (sellerAddr.street)  { fy = footerLine(sellerAddr.street,  COL1, fy); }
+    if (sellerAddr.plzCity) { fy = footerLine(sellerAddr.plzCity, COL1, fy); }
+    footerLine('Deutschland', COL1, fy);
+
+    // ── Column 2: Contact / Tax ──
+    fy = FOOTER_Y;
+    if (sellerDirector) {
+      doc.setFont('Sarabun', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(110, 110, 110);
+      doc.text(T('Geschäftsführer: ' + sellerDirector), COL2, fy);
+      fy += 4.2;
+    }
+    if (sellerPhone)    { fy = footerLine('Telefon: ' + sellerPhone, COL2, fy); }
+    if (ownerEmail)     { fy = footerLine('E-Mail: ' + ownerEmail,    COL2, fy); }
+    if (sellerTax)      { fy = footerLine('Steuernummer: ' + sellerTax, COL2, fy); }
+    if (sellerVat)      { fy = footerLine('USt.-IDNr.: ' + sellerVat,   COL2, fy); }
+
+    // ── Column 3: Bank ──
+    fy = FOOTER_Y;
+    doc.setFont('Sarabun', 'bold');
+    doc.setFontSize(7.5);
+    doc.setTextColor(110, 110, 110);
+    doc.text(T('Bankverbindungen'), COL3, fy);
+    fy += 4.2;
+    if (sellerBank) { fy = footerLine(sellerBank,                COL3, fy); }
+    if (sellerIban) { fy = footerLine('IBAN: ' + sellerIban,      COL3, fy); }
+    if (sellerBic)  { fy = footerLine('BIC/Swift: ' + sellerBic,  COL3, fy); }
+
+    // ── Output ──
+    if (isPreview) {
+      const blobUrl = doc.output('bloburl');
+      Swal.close();
+      window.open(blobUrl, '_blank');
+    } else {
+      doc.save(`Rechnung_${T(order.orderNumber || order.id, 'Rechnung')}.pdf`);
+      Swal.close();
+    }
+  } catch (e) {
+    Swal.fire('Fehler', 'สร้าง PDF ไม่สำเร็จ: ' + e.message, 'error');
+  }
 }

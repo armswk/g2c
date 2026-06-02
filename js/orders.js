@@ -360,9 +360,12 @@ export function loadHistory() {
 
     const displayId = g.orderNumber || g.id;
 
-    // 📄 ออกบิล (Rechnung) — shown only for completed orders.
+    // 🖨️ ใบเสร็จ (Slip) — always available
+    const slipBtn = `<span style="font-size:0.82rem; color:#475569; cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px; background:#F1F5F9; padding:6px 10px; border-radius:6px; border:1px solid #E2E8F0; white-space:nowrap;" onclick="printReceipt('${g.id}')"><i class="ph ph-printer"></i> ใบเสร็จ (Slip)</span>`;
+
+    // 👁️ พรีวิว Rechnung — shown only for completed orders
     const rechnungBtn = g.paymentStatus === 'จ่ายแล้ว'
-      ? `<span style="font-size:0.85rem; color:var(--primary-dk); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="generateRechnung('${g.id}')"><i class="ph ph-file-pdf"></i> ออกบิล (Rechnung)</span>`
+      ? `<span style="font-size:0.82rem; color:var(--primary-dk); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:4px; background:#ECFDF5; padding:6px 10px; border-radius:6px; border:1px solid #A7F3D0; white-space:nowrap;" onclick="generateRechnung('${g.id}', 'preview')"><i class="ph ph-file-pdf"></i> พรีวิว Rechnung</span>`
       : '';
 
     let quickPayBtn = '';
@@ -391,10 +394,10 @@ export function loadHistory() {
         <div style="background:#F8FAFC; padding:12px 15px; border-radius:8px; margin-bottom:12px; border: 1px solid #E2E8F0;">${itemsHtml}</div>
         ${Number(g.ar_balance) > 0 ? `<div style="font-size:0.85rem; color:#1E40AF; background:#EFF6FF; padding:8px 12px; border-radius:6px; margin-bottom:8px; border: 1px solid #BFDBFE; display:flex; justify-content:space-between; align-items:center;"><span><i class="ph-fill ph-bank" style="color:#3B82F6;"></i> <span style="font-weight:600;">AR Balance:</span> -€${Number(g.ar_balance).toFixed(2)}</span></div>` : ''}
         ${g.remark ? `<div style="font-size:0.85rem; color:#92400E; background:#FFFBEB; padding:8px 12px; border-radius:6px; margin-bottom:12px; border: 1px solid #FDE68A;"><i class="ph-fill ph-note" style="color:#D97706;"></i> <span style="font-weight:600;">หมายเหตุ:</span> ${g.remark}</div>` : ''}
-        <div style="display:flex; gap:15px; justify-content: flex-end; flex-wrap: wrap;">
+        <div style="display:flex; gap:8px; justify-content: flex-end; flex-wrap: wrap; align-items:center;">
           ${quickPayBtn}
+          ${slipBtn}
           ${rechnungBtn}
-          <span style="font-size:0.85rem; color:var(--success); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="printReceipt('${g.id}')"><i class="ph ph-printer"></i> พิมพ์</span>
           <span style="font-size:0.85rem; color:var(--primary-lt); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="editOrder('${g.id}')"><i class="ph ph-pencil-simple"></i> แก้ไข</span>
           <span style="font-size:0.85rem; color:var(--danger); cursor:pointer; font-weight:600; display:flex; align-items:center; gap:5px;" onclick="delOrder('${g.id}')"><i class="ph ph-trash"></i> ลบ</span>
         </div>
