@@ -1,29 +1,33 @@
-name: CI/CD Pipeline (Build & Deploy Local)
+name: CI/CD Pipeline (Build & Deploy via GitOps)
 
 on:
   push:
     branches: [ "main" ]
     paths-ignore:
       - 'README.md'
-      - '.github/**'           
-      - '.gitignore'        
-      - 'LICENSE'          
-      - '**/*.md'           
-      - '.vscode/**'     
+      - '.github/**'
+      - '.gitignore'
+      - 'LICENSE'
+      - '**/*.md'
+      - 'GEMINI.md'
+      - '.vscode/**'
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  # ─── JOB 1: CONTINUOUS INTEGRATION (BUILD) ───
+  build:
     runs-on: arc-runner-set
     permissions:
       contents: read
       packages: write
-
+    # 👇 Map the step output to the job output so the deploy job can read it
+    outputs:
+      image_sha: ${{ steps.vars.outputs.SHORT_SHA }}
+      
     steps:
-      - name: 📥 Checkout code
+      - name: 📥 Checkout App Code
         uses: actions/checkout@v4
 
-      # 👇 1. เพิ่ม id: vars และเปลี่ยนไปใช้ GITHUB_OUTPUT แทน
       - name: ✂️ Get Short SHA
         id: vars
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
@@ -35,7 +39,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 👇 2. เปลี่ยนการอ้างอิงเป็น steps.vars.outputs.SHORT_SHA
       - name: 📦 Build and push Docker image
         uses: docker/build-push-action@v5
         with:
@@ -45,13 +48,33 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/g2c-web:${{ steps.vars.outputs.SHORT_SHA }}
             ghcr.io/${{ github.repository_owner }}/g2c-web:latest
 
-      - name: 🛠️ Install kubectl
-        run: |
-          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-          sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+  # ─── JOB 2: CONTINUOUS DEPLOYMENT (GITOPS) ───
+  update-manifest:
+    # 👇 Tells GitHub this job cannot start until 'build' finishes successfully
+    needs: build 
+    runs-on: arc-runner-set
+    
+    steps:
+      - name: 📂 Checkout Infrastructure Repo
+        uses: actions/checkout@v4
+        with:
+          repository: armswk/homelab-infrastructure
+          token: ${{ secrets.INFRA_REPO_PAT }}
+          path: infra-repo
 
-      # 👇 3. เปลี่ยนการอ้างอิงตรงนี้ด้วยเช่นกัน
-      - name: 🚀 Deploy to K3S
+      - name: ✍️ Update Image Tag in Manifest
         run: |
-          kubectl set image deployment/g2c-frontend frontend=ghcr.io/${{ github.repository_owner }}/g2c-web:${{ steps.vars.outputs.SHORT_SHA }} -n g2c
-          kubectl rollout status deployment/g2c-frontend -n g2c
+          cd infra-repo
+          # 👇 Notice we use needs.build.outputs.image_sha to grab the tag from Job 1
+          sed -i "s|image: ghcr.io/${{ github.repository_owner }}/g2c-web:.*|image: ghcr.io/${{ github.repository_owner }}/g2c-web:${{ needs.build.outputs.image_sha }}|g" applications/g2c/04-g2c-frontend.yaml
+          git diff
+
+      - name: 🚀 Push changes to Infrastructure Repo
+        run: |
+          cd infra-repo
+          git config user.name "GitHub Actions Bot"
+          git config user.email "actions@github.com"
+          
+          git add applications/g2c/04-g2c-frontend.yaml
+          git commit -m "chore(g2c): update frontend image to ${{ needs.build.outputs.image_sha }}"
+          git push origin main

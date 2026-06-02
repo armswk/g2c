@@ -182,6 +182,7 @@ export async function showProfileModal() {
       .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
     Swal.fire({
+        width: 640,
         title: `<div style="font-family: 'Sarabun', sans-serif; color: var(--primary-dk); font-weight: 700; font-size: 1.3rem;"><i class="ph-fill ph-user-gear" style="font-size: 2.5rem; color: var(--primary-lt); display: block; margin-bottom: 10px;"></i>บัญชีผู้ใช้</div>`,
         html: `
             <div style="text-align: left; padding-top: 10px; font-family: 'Sarabun', sans-serif;">
@@ -282,6 +283,7 @@ export async function showProfileModal() {
         confirmButtonText: 'บันทึกข้อมูล',
         cancelButtonText: 'ปิดหน้าต่าง',
         confirmButtonColor: '#2D6A4F',
+        focusConfirm: false,
         preConfirm: () => {
             const name = document.getElementById('prof-name').value.trim();
             // Collect Rechnung Info fields into a structured object
