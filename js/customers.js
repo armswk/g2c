@@ -390,8 +390,21 @@ function getCustomerDetailHTML() {
   if (c.dob) {
     const d = new Date(c.dob);
     if (!isNaN(d.getTime())) {
-      dobLine = `<div class="flex items-center gap-2 text-sm text-gray-600"><i class="ph-fill ph-cake text-amber-500"></i> ${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</div>`;
+      dobLine = `<div class="flex items-center gap-2 text-sm text-gray-600 mt-1"><i class="ph-fill ph-cake text-amber-500"></i> ${d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}</div>`;
     }
+  }
+
+  let emailLine = '';
+  if (c.email && c.email.trim() !== '') {
+    const safeEmail = escapeHtml(c.email.trim());
+    const copyAction = `navigator.clipboard.writeText('${safeEmail}'); Swal.fire({toast: true, position: 'top-end', icon: 'success', title: 'คัดลอกอีเมลแล้ว', showConfirmButton: false, timer: 1500})`;
+    emailLine = `<div class="flex items-center gap-2 text-sm text-gray-600 mt-1">
+      <i class="ph ph-envelope-simple text-emerald-600"></i>
+      <span>${safeEmail}</span>
+      <button onclick="${copyAction}" class="text-gray-400 hover:text-emerald-600 transition flex items-center" title="คัดลอกอีเมล">
+        <i class="ph ph-copy text-base"></i>
+      </button>
+    </div>`;
   }
 
   const ordersHtml = orders.length === 0
@@ -507,6 +520,7 @@ function getCustomerDetailHTML() {
               ${uplineHtml}
               ${phone ? `<div class="flex items-center gap-2 text-sm text-gray-600 mt-1"><i class="ph-fill ph-phone text-emerald-600"></i> ${escapeHtml(phone)}</div>` : ''}
               ${dobLine}
+              ${emailLine}
             </div>
           </div>
           ${socialChipsHtml ? `<div class="mt-3 flex flex-wrap gap-2">${socialChipsHtml}</div>` : ''}
@@ -632,12 +646,13 @@ export function addSwalSocialRow(type = 'Line', val = '') {
 }
 
 export function showCustomerModal(id = null) {
-  let cNickname = '', cName = '', cPhone = '', cRemark = '', cMap = '', cDob = '', cAddress = '', cSocials = [], cStatus = 'Member', cUpline = '', modalTitle = 'เพิ่มลูกค้าใหม่', icon = 'ph-user-plus';
+  let cNickname = '', cName = '', cPhone = '', cEmail = '', cRemark = '', cMap = '', cDob = '', cAddress = '', cSocials = [], cStatus = 'Member', cUpline = '', modalTitle = 'เพิ่มลูกค้าใหม่', icon = 'ph-user-plus';
   if (id) {
     const c = state.allCustomers.find(x => x.id === id);
     if (c) {
        cNickname = c.nickname || '';
        cName = c.name; const parsed = parseCustomerData(c); cPhone = parsed.phone; cSocials = parsed.socials;
+       cEmail = c.email || '';
        cRemark = c.remark || ''; cMap = c.mapUrl || '';
        cDob = c.dob ? new Date(c.dob).toISOString().split('T')[0] : '';
        cAddress = c.address || ''; cStatus = c.status || 'Member';
@@ -659,13 +674,12 @@ export function showCustomerModal(id = null) {
     title: `<div style="font-family: 'Sarabun', sans-serif; color: var(--primary-dk); font-weight: 700; font-size: 1.4rem;"><i class="ph-fill ${icon}" style="font-size: 2.5rem; color: var(--primary-lt); display: block; margin-bottom: 10px;"></i>${modalTitle}</div>`,
     html: `
       <div style="text-align: left; padding-top: 15px; font-family: 'Sarabun', sans-serif;">
-        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-           <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ชื่อเล่น (Nickname) <span style="color: var(--danger);">*</span></label><input type="text" id="swal-cus-nickname" class="c-input" placeholder="เช่น สมชาย" value="${cNickname}" style="margin:0;"></div>
-           <div style="flex: 1.5;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ชื่อ-นามสกุล (Full Name)</label><input type="text" id="swal-cus-name" class="c-input" placeholder="เช่น คุณสมชาย ใจดี" value="${cName}" style="margin:0;"></div>
-        </div>
-        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-           <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">เบอร์โทรศัพท์</label><input type="tel" id="swal-cus-phone" class="c-input" placeholder="081XXXXXXX" value="${cPhone}" style="margin:0;"></div>
-           <div style="flex: 1;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">วันเดือนปีเกิด</label><input type="date" id="swal-cus-dob" class="c-input" value="${cDob}" style="margin:0;"></div>
+        <div class="grid grid-cols-2 gap-4 mb-4">
+           <div><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ชื่อเล่น (Nickname) <span style="color: var(--danger);">*</span></label><input type="text" id="swal-cus-nickname" class="c-input w-full" placeholder="เช่น สมชาย" value="${cNickname}" style="margin:0;"></div>
+           <div><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ชื่อ-นามสกุล (Full Name)</label><input type="text" id="swal-cus-name" class="c-input w-full" placeholder="เช่น คุณสมชาย ใจดี" value="${cName}" style="margin:0;"></div>
+           <div><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">เบอร์โทรศัพท์</label><input type="tel" id="swal-cus-phone" class="c-input w-full" placeholder="081XXXXXXX" value="${cPhone}" style="margin:0;"></div>
+           <div><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">วันเดือนปีเกิด</label><input type="date" id="swal-cus-dob" class="c-input w-full" value="${cDob}" style="margin:0;"></div>
+           <div class="col-span-2"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">อีเมล (Email)</label><input type="email" id="swal-cus-email" class="c-input w-full" placeholder="example@email.com" value="${cEmail}" style="margin:0;"></div>
         </div>
         <div style="margin-bottom: 15px;"><label style="display: flex; justify-content: space-between; align-items: center; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; padding-top: 15px; border-top: 1px solid var(--border);">ช่องทางติดต่ออื่นๆ (Social)<span onclick="addSwalSocialRow()" style="color: var(--primary); font-size: 0.8rem; cursor: pointer; font-weight: 700; background: #E8F5E9; padding: 4px 10px; border-radius: 12px;">+ เพิ่มช่องทาง</span></label><div id="swal-socials-container"></div></div>
         <div style="margin-bottom: 15px;"><label style="display: block; font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 6px;">ที่อยู่จัดส่ง</label><textarea id="swal-cus-address" class="c-input" placeholder="ระบุที่อยู่..." rows="2" style="margin:0; resize: vertical;">${cAddress}</textarea></div>
@@ -694,7 +708,7 @@ export function showCustomerModal(id = null) {
     focusConfirm: false, showCancelButton: true, confirmButtonText: 'บันทึกข้อมูล', cancelButtonText: 'ยกเลิก', confirmButtonColor: '#2D6A4F',
     preConfirm: () => {
       const nickname = document.getElementById('swal-cus-nickname').value.trim();
-      const name = document.getElementById('swal-cus-name').value.trim(); const phone = document.getElementById('swal-cus-phone').value.trim(); const remark = document.getElementById('swal-cus-remark').value.trim(); const mapUrl = document.getElementById('swal-cus-map').value.trim();
+      const name = document.getElementById('swal-cus-name').value.trim(); const phone = document.getElementById('swal-cus-phone').value.trim(); const email = document.getElementById('swal-cus-email').value.trim(); const remark = document.getElementById('swal-cus-remark').value.trim(); const mapUrl = document.getElementById('swal-cus-map').value.trim();
       const dob = document.getElementById('swal-cus-dob').value; const address = document.getElementById('swal-cus-address').value.trim();
       const status = document.getElementById('swal-cus-status').value;
       const upline = document.getElementById('swal-cus-upline').value;
@@ -703,7 +717,7 @@ export function showCustomerModal(id = null) {
       if (!nickname) { Swal.showValidationMessage('⚠️ กรุณากรอกชื่อเล่น (Nickname)'); return false; }
       // Fall back to nickname when full name is left blank, so order linkage (which uses `name`) always has a value.
       const finalName = name || nickname;
-      return { nickname, name: finalName, channel: socials, phone, remark, mapUrl, dob: dob ? new Date(dob).toISOString() : null, address, status, upline: upline || null };
+      return { nickname, name: finalName, channel: socials, phone, email, remark, mapUrl, dob: dob ? new Date(dob).toISOString() : null, address, status, upline: upline || null };
     }
   }).then((result) => { if (result.isConfirmed) saveCustomer(result.value, id); });
 }
